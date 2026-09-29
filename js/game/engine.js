@@ -141,10 +141,12 @@ export function questionPool(room, activeIds = activePlayers(room).map((p) => p.
   return { deck, starter, primary, backup, total: primary.length + backup.length };
 }
 
+/** Even steps from the lowest level to the highest (e.g. 15 questions, 5 levels: 3 each). */
 export function targetLevel(levels, idx, n) {
   if (!levels.length) return 1;
   if (n <= 1 || levels.length === 1) return levels[0];
-  return levels[Math.round((idx * (levels.length - 1)) / (n - 1))];
+  if (levels.length > n) return levels[Math.round((idx * (levels.length - 1)) / (n - 1))];
+  return levels[Math.min(levels.length - 1, Math.floor((idx * levels.length) / n))];
 }
 
 /** Resolve which players fill a question, preferring people asked about least. */

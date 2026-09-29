@@ -213,8 +213,9 @@ test('level progression is monotonic for longer games', () => {
   }
   assert.equal(levels.length, 15);
   for (let i = 1; i < levels.length; i++) assert.ok(levels[i] >= levels[i - 1], levels.join(','));
-  assert.equal(levels[0], 1);
-  assert.equal(levels[14], 5);
+  assert.deepEqual(levels, [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5], 'three questions per level');
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => E.targetLevel([1, 2, 3, 4, 5], i, 10)), [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
+  assert.deepEqual([0, 1, 2].map((i) => E.targetLevel([1, 2, 3, 4, 5], i, 3)), [1, 3, 5], 'short games still end at the top');
 });
 
 test('subject may be excluded from answering', () => {
