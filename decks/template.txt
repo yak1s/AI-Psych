@@ -1,0 +1,29 @@
+# AI Psych question deck (plain-text format)
+# Lines starting with # are comments.
+#
+# {Name}          -> a predicted player (match them to real players in the lobby)
+# {any} / {any2}  -> random players (different people)
+# Questions about a predicted player who doesn't join are skipped automatically.
+
+Title: Family Night
+Players: Mom, Dad, Sarah, Grandpa Joe
+
+[Level 1]
+What is {Mom}'s secret talent that nobody knows about?
+If {Dad} were a kitchen appliance, which one would it be?
+
+[Level 2]
+What does {Sarah} actually do during "homework time"?
+What would {Grandpa Joe} and {Dad} argue about on a road trip?
+
+[Level 3]
+What is hidden in the back of {Mom}'s closet?
+What did {any} really do last weekend?
+
+[Level 4]
+Why was {Dad} awake at 3am last Tuesday?
+What does {Sarah} really think of {Mom}'s cooking?
+
+[Level 5]
+What is {Grandpa Joe} planning for the next birthday that nobody has been told about?
+What is the name {any} whispers when nobody is around?

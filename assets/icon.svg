@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <filter id="w" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="3" seed="4"/>
+      <feDisplacementMap in="SourceGraphic" scale="4" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#fbf3e4"/>
+  <g filter="url(#w)">
+    <circle cx="32" cy="32" r="25" fill="#a27cf2" fill-opacity=".75"/>
+    <circle cx="26" cy="27" r="13" fill="#ff8cc6" fill-opacity=".6"/>
+  </g>
+  <path d="M10 32c10-13 34-13 44 0-10 13-34 13-44 0z" fill="#fff" stroke="#2d2a4a" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="32" cy="32" r="8" fill="#58b4f2" stroke="#2d2a4a" stroke-width="2.5"/>
+  <circle cx="32" cy="32" r="3.6" fill="#2d2a4a"/>
+  <circle cx="34.5" cy="29.5" r="1.6" fill="#fff"/>
+</svg>
