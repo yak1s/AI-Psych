@@ -1,0 +1,51 @@
+{
+  "title": "Family Night",
+  "players": [
+    "Mom",
+    "Dad",
+    "Sarah",
+    "Grandpa Joe"
+  ],
+  "questions": [
+    {
+      "level": 1,
+      "text": "What is {Mom}'s secret talent that nobody knows about?"
+    },
+    {
+      "level": 1,
+      "text": "If {Dad} were a kitchen appliance, which one would it be?"
+    },
+    {
+      "level": 2,
+      "text": "What does {Sarah} actually do during \"homework time\"?"
+    },
+    {
+      "level": 2,
+      "text": "What would {Grandpa Joe} and {Dad} argue about on a road trip?"
+    },
+    {
+      "level": 3,
+      "text": "What is hidden in the back of {Mom}'s closet?"
+    },
+    {
+      "level": 3,
+      "text": "What did {any} really do last weekend?"
+    },
+    {
+      "level": 4,
+      "text": "Why was {Dad} awake at 3am last Tuesday?"
+    },
+    {
+      "level": 4,
+      "text": "What does {Sarah} really think of {Mom}'s cooking?"
+    },
+    {
+      "level": 5,
+      "text": "What is {Grandpa Joe} planning for the next birthday that nobody has been told about?"
+    },
+    {
+      "level": 5,
+      "text": "What is the name {any} whispers when nobody is around?"
+    }
+  ]
+}
