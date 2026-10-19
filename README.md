@@ -10,7 +10,8 @@ A hand-drawn, watercolor party game in the spirit of _Psych! Outwit Your Friends
 - 📱 No accounts, no install, no server to run — a static site that works on GitHub Pages
 - 🔌 Peer-to-peer over WebRTC, works across different networks (Wi‑Fi, mobile data…)
 - 🔁 Survives refreshes, dropped connections and phones going to sleep — **even the host can refresh**
-- 👥 2–8 players, games of 5, 10 or 15 questions
+- 👥 2–16 players, games of 5, 10 or 15 questions
+- ⏱️ Optional hard time limits (Chill / Normal / Fast) — whatever is typed gets sent when time runs out
 
 | | | |
 | :---: | :---: | :---: |
@@ -39,13 +40,14 @@ A hand-drawn, watercolor party game in the spirit of _Psych! Outwit Your Friends
 
 ### Host powers
 
-- ⏱ **45-second timer**: puts a countdown on everyone's screen. When it runs out, nothing happens automatically. The host sees who's missing and decides: **move on without them**, **give 45 more seconds**, or keep waiting.
+- ⏱ **Timer (30 / 45 / 60 s)**: puts a countdown on everyone's screen. When it runs out, nothing happens automatically: the host sees who's missing and decides to **move on** (anything they had typed is sent for them), **add more time**, or keep waiting.
 - ⏭ **Skip question**: throws away the current answers and the AI writes a brand-new question for the same round.
 - **Next anyway** on the results screen if someone wandered off, **kick** a player from the lobby, **End game** to go back to the lobby.
 
 ### Settings (lobby)
 
 - Number of questions: 5 / 10 / 15
+- **Time limit**: Off, Chill (2:00 to write / 1:00 to vote), Normal (1:30 / 0:45) or Fast (1:00 / 0:30). With a limit the game moves on by itself: unsent text is submitted automatically. If someone submitted and then started editing, the original submitted answer counts.
 - "The person asked about writes an answer too" (on by default)
 - Show the creep-o-meter 👁️ (on by default)
 - Top up with built-in questions if the deck runs out
@@ -54,7 +56,7 @@ A hand-drawn, watercolor party game in the spirit of _Psych! Outwit Your Friends
 
 ## The secret question deck
 
-After at least one player has joined, the host can upload a **question deck** in the lobby, and the room code stays on screen while they do it. The deck contains:
+The host can upload a **question deck** in the lobby at any time (even before anyone joins), and the room code stays on screen while they do it. The deck contains:
 
 - **Questions**, each with a **creepiness level from 1 to 5**
 - **Predicted players**: the people you expect to show up (e.g. "Mom", "Dad")
@@ -144,6 +146,7 @@ Any static host works too (Netlify, Cloudflare Pages, `python3 -m http.server`�
 
 - **WebRTC, host-authoritative.** The host's browser runs the game and is the single source of truth. Every player has a direct peer-to-peer data channel to the host.
 - **Finding each other.** WebRTC needs a tiny "introduction" (signaling) server. By default AI Psych uses the free public [PeerJS](https://peerjs.com) server. The room code maps to a well-known peer id. After the introduction, game traffic goes device-to-device.
+- **Two paths to every player.** Each device talks to the host over a direct WebRTC channel *and*, in parallel, an end-to-end encrypted relay through public MQTT brokers over secure WebSockets (several brokers at once for redundancy). The relay works where WebRTC can't — a host on a VPN, carrier-grade NAT on mobile data, players in other countries — and if the direct path dies mid-game the relay takes over instantly with no disconnect. The brokers only see encrypted bytes (ECDH key exchange + AES-GCM per player).
 - **Different networks.** Google and Cloudflare STUN servers plus the PeerJS TURN relay are configured, so it works across home Wi‑Fi, mobile data, etc. For strict corporate/school networks you can add your own TURN server in [`js/config.js`](js/config.js).
 - **Everything is saved in the browser.** The host saves the whole game to `localStorage` after every change. Players keep their identity (a random id + secret) and any unsent actions. Nothing needs an account.
 - **Refresh-proof.** A refreshed player silently rejoins as themselves, and a half-typed answer is kept. A refreshed host reclaims the same room id instantly (it keeps a private token) and everyone reconnects automatically, usually within a second. A service worker caches the app so a refresh works even while the internet is flaky.

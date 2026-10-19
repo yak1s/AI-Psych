@@ -1,6 +1,6 @@
 import { html, useState, useEffect, useMemo, useRef } from '../vendor/preact-htm.js';
 import { Btn, Avatar, Toggle, Seg, Confirm, Doodle, cx, playerMap } from './common.js';
-import { MAX_PLAYERS, MIN_PLAYERS, ROUND_CHOICES } from '../game/engine.js';
+import { MAX_PLAYERS, MIN_PLAYERS, ROUND_CHOICES, TIME_LIMITS } from '../game/engine.js';
 import { parseDeck, TEMPLATE_DECK, LEVELS } from '../game/deck.js';
 import { brush } from './art.js';
 import { netQuery } from '../config.js';
@@ -29,6 +29,7 @@ export function PlayerTiles({ view, onKick, showEmpty }) {
     <${Avatar} p=${p} size="lg" bob off=${!p.online} delay=${i * 0.3} badge=${!p.online ? '📡' : null} />
     <div class="name">${p.name}</div>
     <div class="tag">${p.isHost ? 'host' : p.id === view.me ? 'you!' : !p.online ? 'reconnecting…' : ''}</div>
+    ${onKick && p.online && p.net === 'relay' && html`<span class="net-tag" title="Connected through the backup relay (direct connection blocked on this network)">relay</span>`}
     ${onKick && !p.isHost && html`<button class="kick" title=${`Remove ${p.name}`} onClick=${() => onKick(p)}>${Doodle.cross({ size: 16, sw: 4 })}</button>`}
   </div>`);
   if (showEmpty) {
@@ -113,6 +114,18 @@ function Settings({ ctrl, info }) {
       <span class="script" style="font-size:24px">Questions</span>
       <${Seg} value=${s.rounds} onChange=${(v) => set({ rounds: v })} options=${ROUND_CHOICES.map((n) => ({ value: n, label: String(n) }))} />
     </div>
+    <div class="stack" style="gap:6px">
+      <div class="row" style="justify-content:space-between">
+        <span class="script" style="font-size:24px">Time limit</span>
+        <${Seg} value=${s.timeLimit || 'off'} onChange=${(v) => set({ timeLimit: v })}
+          options=${Object.entries(TIME_LIMITS).map(([k, v]) => ({ value: k, label: v ? v.label : 'Off' }))} />
+      </div>
+      <span class="time-hint">${(() => {
+        const l = TIME_LIMITS[s.timeLimit || 'off'];
+        const f = (x) => (x >= 60 ? `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}` : `${x}s`);
+        return l ? `${f(l.answer)} to write, ${f(l.vote)} to vote — then whatever is typed gets sent and the game moves on by itself.` : 'No limit — the host can still start a 30/45/60-second timer any time.';
+      })()}</span>
+    </div>
     <${Toggle} checked=${s.subjectAnswers} onChange=${(v) => set({ subjectAnswers: v })} label="The person asked about writes an answer too" />
     <${Toggle} checked=${s.showMeter} onChange=${(v) => set({ showMeter: v })} label="Show the creep-o-meter 👁️" />
     ${info.deck && html`<${Toggle} checked=${s.fillStarter} onChange=${(v) => set({ fillStarter: v })} label="Top up with built-in questions if the deck runs out" />`}
@@ -133,8 +146,7 @@ function DeckPanel({ ctrl, view, info }) {
   const [warnings, setWarnings] = useState([]);
   const [over, setOver] = useState(false);
   const fileRef = useRef();
-  const joined = view.players.length - 1;
-  const canUpload = joined >= 1;
+  const canUpload = true;
   const who = playerMap(view);
   const deck = info.deck;
 
@@ -192,7 +204,7 @@ function DeckPanel({ ctrl, view, info }) {
               })}
             </div>
             ${warnings.length > 0 && html`<ul class="warn-list">${warnings.map((w, i) => html`<li key=${i}>${w}</li>`)}</ul>`}
-            <div class="secret-hint">Who is who? Match the deck's names to the players who joined:</div>
+            <div class="secret-hint">Who is who? Match the deck's names to the players who joined${view.players.length < 2 ? ' (as people join, obvious names match automatically)' : ''}:</div>
             ${deck.predicted.map((x) => html`<div class="assign-row" key=${x.key}>
               <div><div class="who">${x.name}</div><div class="muted small">${x.uses} question${x.uses === 1 ? '' : 's'}</div></div>
               <select class=${x.pid ? 'set' : ''} value=${x.pid || ''} data-testid=${`assign-${x.key}`}

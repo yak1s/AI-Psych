@@ -44,6 +44,10 @@ export class HostController {
     this._startNet();
     this._unload = () => this.save();
     addEventListener('pagehide', this._unload);
+    // Hard time limits are enforced by the host's clock.
+    this._tick = setInterval(() => {
+      if (this.room.game && E.tick(this.room, this.ctx())) this.commit();
+    }, 500);
   }
 
   get pid() {
@@ -54,8 +58,9 @@ export class HostController {
     this.net = new HostNet({
       code: this.room.code,
       token: this.token,
-      onHello: (conn, msg) => this._hello(conn, msg),
+      onHello: (link, msg) => this._hello(link, msg),
       onAction: (pid, msg) => this._action(pid, msg),
+      onDraft: (pid, msg) => this._draft(pid, msg.text, msg.qkey),
       onPresence: () => {
         const g = this.room.game;
         const before = g && g.phase + g.idx;
@@ -63,7 +68,8 @@ export class HostController {
         if (g && before !== g.phase + g.idx) this.room.seq++;
         this.commit();
       },
-      onStatus: (status, detail) => {
+      onStatus: (status, detail, paths) => {
+        this.paths = paths;
         // A brand-new room whose code collides with someone else's: just pick another code.
         if (status === 'id-taken' && this.fresh && this.room.players.length === 1 && !this.room.game) {
           this.changeCode();
@@ -89,7 +95,21 @@ export class HostController {
   }
 
   ctx() {
-    return { now: Date.now(), online: new Set([this.room.hostPid, ...this.net.onlinePids()]) };
+    const online = this.net.onlinePids();
+    const transport = {};
+    for (const pid of online) transport[pid] = this.net.transportOf(pid);
+    return { now: Date.now(), online: new Set([this.room.hostPid, ...online]), transport };
+  }
+
+  /** Typing in progress (never shown to anyone; used if time runs out). */
+  sendDraft(text, qkey) {
+    this._draft(this.room.hostPid, text, qkey);
+  }
+
+  _draft(pid, text, qkey) {
+    if (!E.setDraft(this.room, pid, text, qkey)) return;
+    clearTimeout(this._draftSave);
+    this._draftSave = setTimeout(() => this.save(), 800);
   }
 
   save() {
@@ -98,6 +118,7 @@ export class HostController {
 
   /** Persist and push fresh state to everyone (coalesced per tick). */
   commit() {
+    this.room.seq++;
     this.save();
     if (this._queued) return;
     this._queued = true;
@@ -147,13 +168,19 @@ export class HostController {
     this.detach();
   }
 
+  get transport() {
+    return 'host';
+  }
+
   /** Stop without saving — another tab has taken over and owns the saved state now. */
   detach() {
+    clearInterval(this._tick);
     this.net.stop();
     removeEventListener('pagehide', this._unload);
   }
 
   closeRoom() {
+    clearInterval(this._tick);
     for (const pid of this.net.onlinePids()) this.net.send(pid, { t: 'bye', reason: 'closed' });
     setTimeout(() => this.net.stop(), 300);
     removeEventListener('pagehide', this._unload);
@@ -163,46 +190,39 @@ export class HostController {
 
   // -------------------------------------------------------------------------
 
-  _reject(conn, reason) {
-    this.net.sendConn(conn, { t: 'reject', reason });
-    setTimeout(() => {
-      try {
-        conn.close();
-      } catch {
-        /* ignore */
-      }
-    }, 500);
+  _reject(link, reason) {
+    link.send({ t: 'reject', reason });
   }
 
-  _welcome(conn, player) {
-    this.net.bind(conn, player.id);
-    this.net.sendConn(conn, { t: 'welcome', pid: player.id, secret: player.secret, roomId: this.room.roomId, code: this.room.code });
-    this.net.sendConn(conn, { t: 'state', view: E.viewFor(this.room, player.id, this.ctx()) });
+  _welcome(link, player) {
+    this.net.bind(link, player.id);
+    link.send({ t: 'welcome', pid: player.id, secret: player.secret, roomId: this.room.roomId, code: this.room.code });
+    link.send({ t: 'state', view: E.viewFor(this.room, player.id, this.ctx()) });
   }
 
-  _hello(conn, msg) {
-    if (msg.proto !== E.PROTOCOL) return this._reject(conn, 'proto');
+  _hello(link, msg) {
+    if (msg.proto !== E.PROTOCOL) return this._reject(link, 'proto');
     const room = this.room;
     if (msg.pid) {
       const p = E.getPlayer(room, msg.pid);
-      if (!p || p.secret !== msg.secret || msg.roomId !== room.roomId) return this._reject(conn, 'unknown');
-      if (p.gone) return this._reject(conn, p.gone);
-      if (p.isHost) return this._reject(conn, 'unknown');
-      this._welcome(conn, p);
+      if (!p || p.secret !== msg.secret || msg.roomId !== room.roomId) return this._reject(link, 'unknown');
+      if (p.gone) return this._reject(link, p.gone);
+      if (p.isHost) return this._reject(link, 'unknown');
+      this._welcome(link, p);
       this.commit();
       return;
     }
     // New player. A retried join (lost welcome) is recognised by its joinId.
     const again = msg.joinId && room.players.find((p) => p.joinId === msg.joinId && !p.gone);
     if (again) {
-      this._welcome(conn, again);
+      this._welcome(link, again);
       return;
     }
     const res = E.addPlayer(room, msg.profile || {});
-    if (!res.ok) return this._reject(conn, res.error);
+    if (!res.ok) return this._reject(link, res.error);
     res.player.joinId = msg.joinId || null;
     E.autoAssign(room);
-    this._welcome(conn, res.player);
+    this._welcome(link, res.player);
     this.commit();
   }
 

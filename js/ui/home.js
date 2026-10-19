@@ -1,6 +1,6 @@
 import { html, useState, useEffect, useRef } from '../vendor/preact-htm.js';
 import { Btn, Avatar, Modal, Doodle, cx, errorText, useNow } from './common.js';
-import { AVATARS, NAME_MAX, MAX_PLAYERS } from '../game/engine.js';
+import { AVATARS, COLORS, NAME_MAX, MAX_PLAYERS } from '../game/engine.js';
 import { local, KEYS } from '../storage.js';
 import { sfx } from './audio.js';
 
@@ -62,13 +62,26 @@ export function Home({ onHost, onJoin, resumeHost, resumePlayer, onResumeHost, o
 }
 
 export function AvatarPicker({ value, onChange }) {
-  return html`<div class="avatar-pick" role="radiogroup" aria-label="Pick your avatar">
-    ${AVATARS.map(
-      (a, i) => html`<button key=${a} role="radio" aria-checked=${value === a} class=${value === a ? 'on' : ''}
-        onClick=${() => { sfx('pop'); onChange(a); }}>
-        <${Avatar} p=${{ avatar: a, color: ['coral', 'sky', 'sun', 'mint', 'grape', 'bubblegum', 'tangerine', 'leaf'][i % 8], name: a }} />
-      </button>`,
-    )}
+  const ref = useRef();
+  const surprise = () => {
+    const a = AVATARS[Math.floor(Math.random() * AVATARS.length)];
+    sfx('boing');
+    onChange(a);
+    setTimeout(() => {
+      const el = ref.current && ref.current.querySelector('button.on');
+      if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }, 30);
+  };
+  return html`<div class="stack" style="gap:8px">
+    <div class="avatar-pick" role="radiogroup" aria-label="Pick your avatar" ref=${ref}>
+      ${AVATARS.map(
+        (a, i) => html`<button key=${a} role="radio" aria-checked=${value === a} class=${value === a ? 'on' : ''}
+          onClick=${() => { sfx('pop'); onChange(a); }}>
+          <${Avatar} p=${{ avatar: a, color: COLORS[(i * 5) % COLORS.length], name: a }} />
+        </button>`,
+      )}
+    </div>
+    <button class="link-btn" style="align-self:center" onClick=${surprise}>🎲 surprise me</button>
   </div>`;
 }
 

@@ -14,6 +14,14 @@ export const PALETTE = {
   bubblegum: '#ff8cc6',
   tangerine: '#ff9d42',
   leaf: '#8fd45a',
+  ocean: '#2fa3b5',
+  rose: '#f0607f',
+  lime: '#c3dc3f',
+  indigo: '#6c7cf0',
+  peach: '#ffb38a',
+  aqua: '#6fe0e0',
+  lilac: '#d39cf2',
+  gold: '#e3b23c',
   paper: '#fffaf0',
   ink: '#2d2a4a',
   plum: '#5b2a86',
@@ -184,7 +192,7 @@ function paperTexture() {
 export function installArt() {
   const root = document.documentElement.style;
   root.setProperty('--paper-texture', paperTexture());
-  for (const name of ['coral', 'sky', 'sun', 'mint', 'grape', 'bubblegum', 'tangerine', 'leaf', 'paper']) {
+  for (const name of ['coral', 'sky', 'sun', 'mint', 'grape', 'bubblegum', 'tangerine', 'leaf', 'paper', 'ocean', 'rose', 'lime', 'indigo', 'peach', 'aqua', 'lilac', 'gold']) {
     root.setProperty(`--wash-${name}`, wash(name, 3));
     root.setProperty(`--wash-${name}-2`, wash(name, 11));
     root.setProperty(`--splotch-${name}`, splotch(name, 5));

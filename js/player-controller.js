@@ -73,6 +73,16 @@ export class PlayerController {
     this.emit();
   }
 
+  /** What I'm typing right now — the host submits it for me if time runs out. */
+  sendDraft(text, qkey) {
+    this.draft = { t: 'draft', text, qkey };
+    if (this.welcomed) this.net.send(this.draft);
+  }
+
+  get transport() {
+    return this.net ? this.net.transport : 'none';
+  }
+
   leave() {
     if (this.welcomed) this.net.send({ t: 'act', id: uid(10), a: { type: 'leave' } });
     setTimeout(() => this.stop(), 300);
@@ -119,10 +129,14 @@ export class PlayerController {
         session.set(KEYS.role, { role: 'player', code: m.code });
         this.welcomed = true;
         for (const item of this.pending) this.net.send({ t: 'act', id: item.id, a: item.a });
+        if (this.draft) this.net.send(this.draft);
         this.emit();
         break;
       }
       case 'state':
+        // Two paths (direct + relay) can deliver out of order: never go backwards.
+        if (this._view && this._view.roomId === m.view.roomId && m.view.seq < this._view.seq && this.welcomed && this._fresh) return;
+        this._fresh = true;
         this._view = m.view;
         session.set(KEYS.view, m.view);
         this._view.receivedAt = Date.now();

@@ -1,6 +1,6 @@
 // Offline cache (stale-while-revalidate). A refresh keeps working during short
 // internet outages; new deploys are picked up on the following load.
-const CACHE = 'aipsych-v1';
+const CACHE = 'aipsych-v2';
 const CORE = [
   './',
   './index.html',
@@ -21,6 +21,8 @@ const CORE = [
   './js/game/engine.js',
   './js/net/host-net.js',
   './js/net/client-net.js',
+  './js/net/mqtt.js',
+  './js/net/secure.js',
   './js/ui/app.js',
   './js/ui/art.js',
   './js/ui/audio.js',
@@ -29,6 +31,7 @@ const CORE = [
   './js/ui/lobby.js',
   './js/ui/game.js',
   './js/ui/results.js',
+  './js/ui/lines.js',
   './js/vendor/preact-htm.js',
   './js/vendor/peer.js',
   './js/vendor/qrcode.js',

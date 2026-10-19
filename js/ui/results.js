@@ -1,4 +1,4 @@
-import { html, useState, useEffect } from '../vendor/preact-htm.js';
+import { html, useState, useEffect, useRef } from '../vendor/preact-htm.js';
 import { Btn, Avatar, PName, QuestionText, Doodle, cx, playerMap, useStep, confetti } from './common.js';
 import { brush, wash } from './art.js';
 import { seen, markSeen } from '../storage.js';
@@ -29,39 +29,97 @@ function ResultEntry({ e, stage, who, view, top, index }) {
   </div>`;
 }
 
+/** Animated number: counts from `from` to `to` once `run` turns true. */
+function CountUp({ from, to, run, delay = 0 }) {
+  const [v, setV] = useState(run ? to : from);
+  useEffect(() => {
+    if (!run || from === to) return setV(to);
+    let raf;
+    const t0 = performance.now() + delay;
+    const step = (t) => {
+      const k = Math.min(1, Math.max(0, (t - t0) / 1100));
+      setV(Math.round(from + (to - from) * (1 - Math.pow(1 - k, 3))));
+      if (k < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [run, to]);
+  return v;
+}
+
+const ranksOf = (order, sc) => {
+  const r = {};
+  order.forEach((pid, i) => (r[pid] = i > 0 && (sc[pid] || 0) === (sc[order[i - 1]] || 0) ? r[order[i - 1]] : i + 1));
+  return r;
+};
+
+/**
+ * Leaderboard that starts in the old order and, once it scrolls into view,
+ * slides everyone to their new place while the scores count up.
+ */
 export function Scoreboard({ view, before, after, seenKey }) {
-  const animate = !seenKey || !seen(seenKey);
+  const already = !!seenKey && seen(seenKey);
   const who = playerMap(view);
   const ids = view.players.map((p) => p.id);
   const sortBy = (sc) => ids.slice().sort((a, b) => (sc[b] || 0) - (sc[a] || 0) || who(a).name.localeCompare(who(b).name));
   const orderAfter = sortBy(after);
   const orderBefore = sortBy(before);
-  const [settled, setSettled] = useState(!animate);
+  const rankBefore = ranksOf(orderBefore, before);
+  const rankAfter = ranksOf(orderAfter, after);
+  const [settled, setSettled] = useState(already);
+  const [landed, setLanded] = useState(already); // ranks flip once the rows have arrived
+  const ref = useRef();
   useEffect(() => {
-    if (!animate) return;
-    const t = setTimeout(() => {
-      setSettled(true);
-      sfx('whoosh');
-      if (seenKey) markSeen(seenKey);
-    }, 450);
-    return () => clearTimeout(t);
+    if (already) return;
+    let timer;
+    const go = () => {
+      timer = setTimeout(() => {
+        setSettled(true);
+        sfx('whoosh');
+        orderAfter.forEach((pid, i) => {
+          if (rankAfter[pid] < rankBefore[pid]) setTimeout(() => sfx('pop'), 350 + i * 90);
+        });
+        if (seenKey) markSeen(seenKey);
+        timer = setTimeout(() => setLanded(true), 1100 + orderAfter.length * 90);
+      }, 350);
+    };
+    if (!('IntersectionObserver' in window) || !ref.current) {
+      go();
+      return () => clearTimeout(timer);
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          io.disconnect();
+          go();
+        }
+      },
+      { threshold: 0.55 },
+    );
+    io.observe(ref.current);
+    return () => {
+      io.disconnect();
+      clearTimeout(timer);
+    };
   }, []);
   const max = Math.max(1, ...orderAfter.map((p) => after[p] || 0));
   const STEP = 50;
-  let rank = 0;
-  return html`<div class="card"><div class="card-title">${Doodle.star({ size: 24 })} Scoreboard</div>
+  return html`<div class="card" ref=${ref} data-testid="scoreboard"><div class="card-title">${Doodle.star({ size: 24 })} Scoreboard</div>
     <div class="scoreboard" style=${`height:${orderAfter.length * STEP - 10}px`}>
       ${orderAfter.map((pid, i) => {
         const p = who(pid);
-        const sc = settled ? after[pid] || 0 : before[pid] || 0;
-        const delta = (after[pid] || 0) - (before[pid] || 0);
+        const b = before[pid] || 0;
+        const a = after[pid] || 0;
         const shift = settled ? 0 : (orderBefore.indexOf(pid) - i) * STEP;
-        if (i === 0 || (after[pid] || 0) !== (after[orderAfter[i - 1]] || 0)) rank = i + 1;
-        return html`<div key=${pid} class=${cx('score-row', pid === view.me && 'me')} style=${`position:absolute;left:0;right:0;top:${i * STEP}px;height:40px;transform:translateY(${shift}px)`}>
-          <span class="rank">${rank === 1 && (after[pid] || 0) > 0 ? '👑' : rank}</span>
+        const rank = landed ? rankAfter[pid] : rankBefore[pid];
+        const moved = rankBefore[pid] - rankAfter[pid];
+        const delay = settled && !already ? i * 0.09 : 0;
+        return html`<div key=${pid} class=${cx('score-row', pid === view.me && 'me', moved && settled && 'moving')}
+          style=${`position:absolute;left:0;right:0;top:${i * STEP}px;height:40px;transform:translateY(${shift}px);transition-delay:${delay}s;z-index:${moved > 0 ? 2 : 1}`}>
+          <span class="rank">${rank === 1 && (landed ? a : b) > 0 ? '👑' : rank}</span>
           <${Avatar} p=${p} size="sm" />
-          <div class="bar"><i style=${`width:${(sc / max) * 100}%;background-image:${brush(p.color, i + 1)}`}></i><span>${p.name}</span></div>
-          <span class="num">${sc}${settled && delta > 0 && html`<span class="delta">+${delta}</span>`}</span>
+          <div class="bar"><i style=${`width:${((settled ? a : b) / max) * 100}%;transition-delay:${delay}s;background-image:${brush(p.color, i + 1)}`}></i><span>${p.name}</span></div>
+          <span class="num"><${CountUp} from=${b} to=${a} run=${settled} delay=${delay * 1000} />${settled && a > b && html`<span class="delta">+${a - b}</span>`}${settled && moved !== 0 && !already && html`<span class=${cx('arrow', moved > 0 ? 'up' : 'down')}>${moved > 0 ? '▲' : '▼'}</span>`}</span>
         </div>`;
       })}
     </div>
@@ -93,10 +151,11 @@ export function ResultsPhase({ ctrl, view }) {
   const key = 'res.' + g.q.key;
   const [skip, setSkip] = useState(() => seen(key));
   const total = r.entries.length * 3;
-  const step = useStep(total, (i) => (i % 3 === 0 ? 650 : i % 3 === 1 ? 850 : 1250), { key: g.q.key + skip, skip, delay: 600 });
+  const pace = r.entries.length > 10 ? 0.45 : r.entries.length > 6 ? 0.65 : 1; // big rooms reveal faster
+  const step = useStep(total, (i) => pace * (i % 3 === 0 ? 650 : i % 3 === 1 ? 850 : 1250), { key: g.q.key + skip, skip, delay: 600 });
   const done = step >= total;
   const maxPts = Math.max(0, ...r.entries.map((e) => e.points));
-  const isLast = g.idx + 1 >= g.n;
+  const isLast = g.isLast || g.idx + 1 >= g.n;
 
   useEffect(() => {
     if (skip || step === 0) return;
@@ -131,7 +190,10 @@ export function ResultsPhase({ ctrl, view }) {
     ${done &&
     html`
       ${r.missingAnswers.length > 0 && html`<p class="missing-note">🐢 No answer from ${r.missingAnswers.map((p) => who(p).name).join(', ')} this time.</p>`}
-      <${Scoreboard} view=${view} before=${r.before} after=${r.after} seenKey=${key + '.sb'} />
+      ${g.autoAnswered && g.autoAnswered.length > 0 && html`<p class="missing-note">⏰ The clock sent ${g.autoAnswered.map((p) => who(p).name).join(', ')}'s answer${g.autoAnswered.length > 1 ? 's' : ''} for them.</p>`}
+      ${isLast || !r.after
+        ? html`<div class="card vault" data-testid="vault"><span class="big">🔒</span>The final scores are locked in the vault…<br /><span class="script" style="font-size:22px">until the big reveal!</span></div>`
+        : html`<${Scoreboard} view=${view} before=${r.before} after=${r.after} seenKey=${key + '.sb'} />`}
       <${ReadyBar} ctrl=${ctrl} view=${view} isLast=${isLast} />
     `}
   </div>`;

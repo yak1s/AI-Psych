@@ -131,7 +131,7 @@ const ERRORS = {
   'name-taken': 'Someone already has that name — pick another!',
   'name-empty': 'You need a name first!',
   'name-braces': "Names can't contain { or }",
-  'room-full': 'That room is full (8 players max).',
+  'room-full': 'That room is full (16 players max).',
   'need-players': 'Need at least one more player!',
   'no-questions': 'No fresh questions left for this group! Reset used questions or load another deck.',
   'in-game': 'Finish the current game first.',
@@ -231,7 +231,7 @@ export function QuestionText({ segments, who, animate = true, compact }) {
 export function TimerRing({ endsAt, total, onTick = true }) {
   const now = useNow(200, true);
   const left = Math.max(0, endsAt - now);
-  const secs = Math.ceil(left / 1000);
+  const secs = Math.min(Math.ceil(left / 1000), total ? Math.round(total / 1000) : Infinity);
   const lastSec = useRef(null);
   useEffect(() => {
     if (!onTick || secs === lastSec.current) return;
@@ -244,7 +244,7 @@ export function TimerRing({ endsAt, total, onTick = true }) {
   }, [secs]);
   const r = 24;
   const c = 2 * Math.PI * r;
-  const frac = total ? left / total : 0;
+  const frac = total ? Math.min(1, left / total) : 0;
   return html`<div class=${cx('timer', secs <= 10 && secs > 0 && 'urgent', secs === 0 && 'done')}>
     <div class="timer-ring">
       <svg viewBox="0 0 58 58">
