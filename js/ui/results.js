@@ -3,7 +3,8 @@ import { Btn, Avatar, PName, QuestionText, Doodle, cx, playerMap, useStep, confe
 import { brush, wash } from './art.js';
 import { seen, markSeen } from '../storage.js';
 import { Settings } from './lobby.js';
-import { sfx, buzz } from './audio.js';
+import { sfx, buzz, haptic } from './audio.js';
+import { WaitChat } from './chat.js';
 
 // ---------------------------------------------------------------------------
 // Round results: answers revealed one by one, least popular first.
@@ -142,6 +143,7 @@ function ReadyBar({ ctrl, view, isLast }) {
       ${view.players.map((p) => html`<${Avatar} key=${p.id} p=${p} size="sm" off=${!p.online} badge=${g.ready.includes(p.id) ? '✓' : null} />`)}
     </div>
     ${ready && waiting.length > 0 && html`<span class="muted small">still waiting on ${waiting.map((p) => p.name).join(', ')}</span>`}
+    ${ready && waiting.length > 0 && html`<div style="width:100%;text-align:left"><${WaitChat} ctrl=${ctrl} view=${view} scope=${g.q.key} /></div>`}
   </div>`;
 }
 
@@ -172,6 +174,7 @@ export function ResultsPhase({ ctrl, view }) {
       if (!e.votes.length) sfx('crickets');
       else if (e.points >= 3 || (e.points === maxPts && idx === r.entries.length - 1)) sfx('bigCoin');
       else sfx('coin');
+      if (e.pid === view.me && e.points > 0) haptic(e.points >= 3 ? 'celebrate' : 'success');
       if (e.points === maxPts && maxPts > 0 && idx === r.entries.length - 1) confetti({ count: 70, origin: { x: 0.5, y: 0.6 } });
     }
   }, [step]);

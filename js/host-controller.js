@@ -64,6 +64,7 @@ export class HostController {
       onHello: (link, msg) => this._hello(link, msg),
       onAction: (pid, msg) => this._action(pid, msg),
       onDraft: (pid, msg) => this._draft(pid, msg.text, msg.qkey),
+      onChat: (pid, msg) => this._chat(pid, msg),
       onPresence: () => {
         const g = this.room.game;
         const before = g && g.phase + g.idx;
@@ -102,6 +103,57 @@ export class HostController {
     const transport = {};
     for (const pid of online) transport[pid] = this.net.transportOf(pid);
     return { now: Date.now(), online: new Set([this.room.hostPid, ...online]), transport };
+  }
+
+  // ---------------------------------------------------------------- waiting-room chat
+  // Messages only go to people who are on a waiting screen *right now* (same scope).
+
+  chatPresence(scope) {
+    this._chat(this.room.hostPid, { t: 'chat-here', scope });
+  }
+
+  sendChat(text) {
+    this._chat(this.room.hostPid, { t: 'chat', text });
+  }
+
+  sendReaction(mid, emoji) {
+    this._chat(this.room.hostPid, { t: 'chat-react', mid, emoji });
+  }
+
+  onChatEvent(fn) {
+    (this.chatListeners ||= new Set()).add(fn);
+    return () => this.chatListeners.delete(fn);
+  }
+
+  _chat(pid, msg) {
+    this.chatHere ||= new Map();
+    if (msg.t === 'chat-here') {
+      if (msg.scope) this.chatHere.set(pid, String(msg.scope).slice(0, 40));
+      else this.chatHere.delete(pid);
+      return;
+    }
+    const scope = this.chatHere.get(pid);
+    if (!scope || !E.isActive(this.room, pid)) return;
+    let out;
+    if (msg.t === 'chat') {
+      const text = String(msg.text || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+      if (!text) return;
+      // gentle flood protection
+      const now = Date.now();
+      const hist = ((this._chatRate ||= {})[pid] ||= []).filter((t) => now - t < 4000);
+      if (hist.length >= 6) return;
+      hist.push(now);
+      this._chatRate[pid] = hist;
+      out = { t: 'chat', scope, msg: { mid: uid(8), from: pid, text, at: now } };
+    } else if (msg.t === 'chat-react') {
+      if (typeof msg.mid !== 'string' || typeof msg.emoji !== 'string' || msg.emoji.length > 16) return;
+      out = { t: 'chat-react', scope, mid: msg.mid, emoji: msg.emoji, from: pid };
+    } else return;
+    for (const [to, s] of this.chatHere) {
+      if (s !== scope) continue;
+      if (to === this.room.hostPid) this.chatListeners && this.chatListeners.forEach((fn) => fn(out));
+      else this.net.send(to, out);
+    }
   }
 
   /** Typing in progress (never shown to anyone; used if time runs out). */

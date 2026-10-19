@@ -36,6 +36,18 @@ export class PlayerController {
     this._view = cached && cached.code === identity.code && (!identity.roomId || cached.roomId === identity.roomId) ? cached : null;
     this.pending = identity.pid ? session.get(KEYS.pending, []) : [];
     this._startNet();
+    // Anything not yet acknowledged is re-sent every few seconds (the host ignores duplicates),
+    // so an answer sent into a silent network hiccup is never lost.
+    this._resend = setInterval(() => {
+      if (!this.welcomed || this.ended) return;
+      const now = Date.now();
+      for (const item of this.pending) {
+        if (now - (item.sentAt || 0) > 3500) {
+          item.sentAt = now;
+          this.net.send({ t: 'act', id: item.id, a: item.a });
+        }
+      }
+    }, 1000);
   }
 
   _startNet() {
@@ -66,7 +78,7 @@ export class PlayerController {
 
   dispatch(a) {
     if (this.ended) return;
-    const item = { id: uid(10), a };
+    const item = { id: uid(10), a, sentAt: Date.now() };
     this.pending.push(item);
     session.set(KEYS.pending, this.pending);
     if (this.welcomed) this.net.send({ t: 'act', id: item.id, a });
@@ -77,6 +89,24 @@ export class PlayerController {
   sendDraft(text, qkey) {
     this.draft = { t: 'draft', text, qkey };
     if (this.welcomed) this.net.send(this.draft);
+  }
+
+  chatPresence(scope) {
+    this.chatScope = scope || null;
+    if (this.welcomed) this.net.send({ t: 'chat-here', scope: this.chatScope });
+  }
+
+  sendChat(text) {
+    if (this.welcomed) this.net.send({ t: 'chat', text });
+  }
+
+  sendReaction(mid, emoji) {
+    if (this.welcomed) this.net.send({ t: 'chat-react', mid, emoji });
+  }
+
+  onChatEvent(fn) {
+    (this.chatListeners ||= new Set()).add(fn);
+    return () => this.chatListeners.delete(fn);
   }
 
   get transport() {
@@ -90,6 +120,7 @@ export class PlayerController {
   }
 
   stop() {
+    clearInterval(this._resend);
     this.net.stop();
   }
 
@@ -130,6 +161,7 @@ export class PlayerController {
         this.welcomed = true;
         for (const item of this.pending) this.net.send({ t: 'act', id: item.id, a: item.a });
         if (this.draft) this.net.send(this.draft);
+        if (this.chatScope) this.net.send({ t: 'chat-here', scope: this.chatScope });
         this.emit();
         break;
       }
@@ -150,6 +182,10 @@ export class PlayerController {
         this.emit();
         break;
       }
+      case 'chat':
+      case 'chat-react':
+        this.chatListeners && this.chatListeners.forEach((fn) => fn(m));
+        break;
       case 'reject':
         this._end(m.reason);
         break;

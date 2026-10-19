@@ -243,3 +243,21 @@ export function buzz(pattern = 20) {
     /* ignore */
   }
 }
+
+/** Named vibration patterns so each moment feels different (Android/Chrome; iPhones ignore vibration). */
+const HAPTICS = {
+  tap: 10,
+  select: 14,
+  success: [20, 40, 60],
+  celebrate: [40, 60, 40, 60, 160],
+  alert: [70, 90, 70],
+  nudge: [25, 80, 25, 80, 25],
+  tick: 14,
+  reveal: [15, 35, 15],
+  aboutMe: [30, 50, 30, 50, 100],
+  message: 8,
+};
+
+export function haptic(name) {
+  buzz(HAPTICS[name] ?? 10);
+}

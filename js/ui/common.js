@@ -236,6 +236,7 @@ export function TimerRing({ endsAt, total, onTick = true }) {
   useEffect(() => {
     if (!onTick || secs === lastSec.current) return;
     if (lastSec.current !== null && secs <= 10 && secs > 0) sfx(secs <= 3 ? 'tock' : 'tick');
+    if (lastSec.current !== null && secs <= 3 && secs > 0) buzz(14);
     if (lastSec.current !== null && lastSec.current > 0 && secs === 0) {
       sfx('buzzer');
       buzz([80, 60, 80]);

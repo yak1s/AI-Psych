@@ -106,8 +106,9 @@ test('connections heal after outages, ICE failures and a signaling restart', { t
   await host.evaluate(() => window.__aipsych.current.net.simulateOutage(12000));
   await ann.getByTestId('answer-input').fill('sent during an outage');
   await tap(ann, 'submit-answer');
-  await until(async () => (await onlineCount(host)) === 3, 45000);
-  await until(() => state(host, (c) => Object.values(c.room.game.answers).some((a) => a.text === 'sent during an outage')), 15000);
+  await until(async () => (await onlineCount(host)) < 3, 20000); // the outage is noticed…
+  await until(async () => (await onlineCount(host)) === 3, 45000); // …and everyone comes back
+  await until(() => state(host, (c) => Object.values(c.room.game.answers).some((a) => a.text === 'sent during an outage')), 20000);
 
   // Closing the tab and coming back later: the home screen offers to rejoin.
   const ctx = cid.context();
@@ -236,4 +237,56 @@ test('hard time limit sends whatever was typed and moves on by itself', { timeou
   });
   for (const p of [host, ann, bob]) await p.getByTestId('results-phase').waitFor({ timeout: 15000 });
   for (const p of [host, ann, bob]) await p.context().close();
+});
+
+test('waiting-room chat only reaches people who are waiting, with reactions; vote lock-in reminder', { timeout: 120000 }, async () => {
+  const { host, code } = await hostRoom(world);
+  const ann = await joinRoom(world, code, 'Ann');
+  const bob = await joinRoom(world, code, 'Bob', { net: 'rtc=off' });
+  const cid = await joinRoom(world, code, 'Cid');
+  await tap(host, 'start-game');
+  for (const p of [ann, bob, cid]) await p.getByTestId('answer-input').waitFor({ timeout: 20000 });
+  for (const p of [ann, bob]) {
+    await p.getByTestId('answer-input').fill('answer ' + (p === ann ? 'A' : 'B'));
+    await tap(p, 'submit-answer');
+    await p.getByTestId('chat-input').waitFor({ timeout: 10000 });
+  }
+  await sleep(500);
+  await ann.getByTestId('chat-input').fill('hi from the waiting room');
+  await tap(ann, 'chat-send');
+  await bob.getByText('hi from the waiting room').waitFor({ timeout: 10000 });
+  await ann.locator('.chat-msg.mine', { hasText: 'hi from the waiting room' }).waitFor({ timeout: 10000 }); // mine on my side
+  assert.equal(await bob.locator('.chat-msg.theirs').count(), 1, "others' messages on the other side");
+
+  // Bob reacts; Ann sees it.
+  await bob.getByTestId('chat-bubble').first().click({ force: true });
+  await bob.locator('.react-bar button', { hasText: '😂' }).click({ force: true });
+  await ann.locator('.chat-react', { hasText: '😂' }).waitFor({ timeout: 10000 });
+
+  // Bob goes back to edit: he misses what's said meanwhile, even after coming back.
+  await bob.getByText('change it').click({ force: true });
+  await bob.getByTestId('answer-input').waitFor();
+  await sleep(500);
+  await ann.getByTestId('chat-input').fill('bob cannot see this');
+  await tap(ann, 'chat-send');
+  await ann.getByText('bob cannot see this').waitFor({ timeout: 10000 });
+  await tap(bob, 'submit-answer');
+  await bob.getByTestId('chat-input').waitFor({ timeout: 10000 });
+  await sleep(1500);
+  assert.equal(await bob.getByText('bob cannot see this').count(), 0, 'not received while editing');
+  // Cid never came to the waiting room and has no chat at all.
+  assert.equal(await cid.getByText('hi from the waiting room').count(), 0);
+
+  // Voting: pick an answer but don't lock it in → a reminder shows up.
+  for (const p of [host, cid]) {
+    await p.getByTestId('answer-input').fill('late answer ' + Math.random());
+    await tap(p, 'submit-answer');
+  }
+  await ann.getByTestId('vote-phase').waitFor({ timeout: 20000 });
+  const opt = ann.getByTestId('option').first();
+  await opt.waitFor({ timeout: 15000 });
+  await opt.click({ force: true });
+  assert.equal(await ann.getByTestId('lock-nudge').count(), 0);
+  await ann.getByTestId('lock-nudge').waitFor({ timeout: 9000 });
+  for (const p of [host, ann, bob, cid]) await p.context().close();
 });

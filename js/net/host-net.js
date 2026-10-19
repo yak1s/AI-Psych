@@ -405,6 +405,11 @@ export class HostNet {
       case 'draft':
         if (link.pid && this.byPid.get(link.pid) === link) this.o.onDraft(link.pid, msg);
         break;
+      case 'chat':
+      case 'chat-here':
+      case 'chat-react':
+        if (link.pid && this.byPid.get(link.pid) === link && this.o.onChat) this.o.onChat(link.pid, msg);
+        break;
       default:
         break;
     }

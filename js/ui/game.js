@@ -4,7 +4,8 @@ import { wash } from './art.js';
 import { ANSWER_MAX } from '../game/engine.js';
 import { levelInfo } from '../game/deck.js';
 import { seen, markSeen, session } from '../storage.js';
-import { sfx, buzz } from './audio.js';
+import { sfx, buzz, haptic } from './audio.js';
+import { WaitChat } from './chat.js';
 import { seeded } from '../game/util.js';
 import { AI_LINES, GENERIC_LINES, WRITE_QUIPS, WRITE_CREEPY, VOTE_QUIPS, VOTE_CREEPY, pickLines } from './lines.js';
 
@@ -179,7 +180,7 @@ export function AnswerPhase({ ctrl, view }) {
   }, [doneCount]);
 
   if (intro)
-    return html`<${AiIntro} view=${view} onDone=${() => { markSeen(introKey); setIntro(false); sfx('reveal'); }} />`;
+    return html`<${AiIntro} view=${view} onDone=${() => { markSeen(introKey); setIntro(false); sfx('reveal'); haptic(g.q.about.includes(view.me) ? 'aboutMe' : 'reveal'); }} />`;
 
   const submit = () => {
     const t = text.trim();
@@ -188,7 +189,7 @@ export function AnswerPhase({ ctrl, view }) {
     session.del(draftKey);
     setEditing(false);
     sfx('submit');
-    buzz([15, 40, 15]);
+    haptic('success');
   };
 
   const timer = endsAt && html`<${TimerRing} endsAt=${endsAt} total=${g.timer.total} />`;
@@ -219,6 +220,7 @@ export function AnswerPhase({ ctrl, view }) {
         : expired
           ? html`<p class="quip">${hard ? "⏰ Time's up! Collecting whatever everyone wrote…" : "⏰ Time's up! The host decides who we wait for…"}</p>`
           : html`<${Quips} pool=${WRITE_QUIPS} creepy=${g.q.level >= 4 && !g.q.generic ? WRITE_CREEPY : null} slow=${slow} />`}
+      <${WaitChat} ctrl=${ctrl} view=${view} scope=${g.q.key} />
     </div>`;
   }
 
@@ -271,11 +273,27 @@ export function VotePhase({ ctrl, view }) {
   const slow = g.voters.filter((p) => !g.voted.includes(p) && p !== view.me).map((p) => who(p).name);
   const hard = g.timer && g.timer.hard;
 
+  // Picked an answer but didn't lock it in? A friendly nudge after 5 seconds.
+  const [nudge, setNudge] = useState(false);
+  useEffect(() => {
+    setNudge(false);
+    if (!sel || g.myVote) return;
+    const t = setTimeout(() => {
+      setNudge(true);
+      sfx('whistleUp');
+      haptic('nudge');
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [sel, g.myVote]);
+  useEffect(() => {
+    if (dealt && !skipDeal && canVote) haptic('select');
+  }, [dealt]);
+
   const lock = () => {
     if (!sel) return;
     ctrl.dispatch({ type: 'vote', oid: sel, qkey: g.q.key });
     sfx('stamp');
-    buzz([20, 30, 40]);
+    haptic('success');
   };
 
   const voted = g.myVote;
@@ -300,7 +318,8 @@ export function VotePhase({ ctrl, view }) {
         </button>`;
       })}
     </div>
-    ${canVote && !voted && dealt && html`<${Btn} big block color=${isJudge ? 'sun' : 'grape'} disabled=${!sel} onClick=${lock} sound=${null} testid="lock-vote">
+    ${canVote && !voted && dealt && nudge && html`<p class="nudge-note" data-testid="lock-nudge">👇 Don't forget to lock in your vote!</p>`}
+    ${canVote && !voted && dealt && html`<${Btn} big block color=${isJudge ? 'sun' : 'grape'} disabled=${!sel} onClick=${lock} sound=${null} testid="lock-vote" cls=${nudge ? 'nudging' : ''}>
       🔒 Lock it in${isJudge ? ' (2 pts)' : ''}
     <//>`}
     ${(voted || !canVote) && html`<div class="stack">
@@ -310,6 +329,7 @@ export function VotePhase({ ctrl, view }) {
       ${expired
         ? html`<p class="quip">${hard ? "⏰ Time's up! Counting the votes…" : "⏰ Time's up! Waiting on the host…"}</p>`
         : html`<${Quips} pool=${VOTE_QUIPS} creepy=${g.q.level >= 4 && !g.q.generic ? VOTE_CREEPY : null} slow=${slow} />`}
+      <${WaitChat} ctrl=${ctrl} view=${view} scope=${g.q.key} />
     </div>`}
   </div>`;
 }

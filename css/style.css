@@ -577,3 +577,37 @@ body.spotlight .spotlight-layer { opacity: 1; }
 .check-row { display: flex; gap: 12px; align-items: flex-start; padding: 6px 0; border-bottom: 1.5px dashed var(--ink-faint); }
 .check-row:last-child { border-bottom: 0; }
 .check-icon { font-size: 22px; line-height: 1.2; }
+
+/* ------------------------------------------------------------------ chat */
+.chat { padding: 10px 12px; }
+.chat-head { width: 100%; display: flex; justify-content: space-between; align-items: center; background: none; border: 0; padding: 2px 4px 8px; font-family: var(--display); font-size: 17px; }
+.chat-list { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px 2px 8px; overscroll-behavior: contain; }
+.chat-msg { display: flex; gap: 6px; align-items: flex-end; max-width: 88%; animation: chat-in 0.45s var(--bounce) both; }
+.chat-msg.mine { align-self: flex-end; flex-direction: row-reverse; animation-name: chat-in-right; }
+.chat-msg.theirs { align-self: flex-start; }
+.chat-col { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.chat-msg.mine .chat-col { align-items: flex-end; }
+.chat-name { font-family: var(--display); font-size: 12px; padding-left: 8px; filter: brightness(0.75); }
+.chat-bubble {
+  text-align: left; font-family: var(--body); font-size: 18px; line-height: 1.25; padding: 7px 12px; border: 2px solid; color: var(--ink);
+  border-radius: 18px 18px 18px 4px; word-break: break-word; box-shadow: 1px 2px 0 var(--ink-faint); transition: transform 0.15s var(--bounce);
+}
+.chat-msg.mine .chat-bubble { border-radius: 18px 18px 4px 18px; }
+.chat-bubble:active { transform: scale(0.96); }
+.chat-reacts { display: flex; gap: 4px; flex-wrap: wrap; }
+.chat-react { font-size: 14px; padding: 1px 7px; border: 1.5px solid var(--ink-faint); border-radius: 12px; background: var(--card); animation: pop-in 0.35s var(--bounce) both; }
+.chat-react.me { border-color: var(--grape); background: #f1eafe; }
+.react-bar { display: flex; flex-wrap: wrap; gap: 2px; padding: 4px 6px; background: var(--card); border: 2px solid var(--ink); border-radius: 22px; box-shadow: 2px 3px 0 var(--ink-faint); animation: pop-in 0.3s var(--bounce) both; max-width: 290px; }
+.react-bar button { font-size: 20px; background: none; border: 0; padding: 2px 3px; transition: transform 0.15s var(--bounce); }
+.react-bar button:hover, .react-bar button:active { transform: scale(1.35); }
+.react-bar .more { font-family: var(--display); font-size: 18px; width: 28px; }
+.react-more { display: grid; grid-template-columns: repeat(8, 1fr); width: 100%; border-top: 1.5px dashed var(--ink-faint); margin-top: 3px; padding-top: 3px; }
+.chat-input { display: flex; gap: 8px; align-items: center; }
+.chat-input .input { font-size: 18px; padding: 8px 12px; }
+.chat-send { flex: none; width: 46px; height: 46px; border-radius: 50%; border: 2.5px solid var(--ink); background-image: var(--wash-mint); background-size: 100% 100%; background-color: var(--card); font-size: 20px; transition: transform 0.15s var(--bounce); }
+.chat-send:active:not(:disabled) { transform: scale(0.9) rotate(-10deg); }
+.chat-send:disabled { opacity: 0.45; }
+@keyframes chat-in { from { opacity: 0; transform: translateX(-24px) scale(0.85); } to { opacity: 1; transform: none; } }
+@keyframes chat-in-right { from { opacity: 0; transform: translateX(24px) scale(0.85); } to { opacity: 1; transform: none; } }
+.nudge-note { margin: 0; text-align: center; font-family: var(--display); font-size: 17px; color: #b3261e; animation: wiggle 0.5s ease-in-out 3; }
+.btn.nudging { animation: shake 0.5s ease 2, pulse-btn 1.2s ease-in-out 1s infinite; }
