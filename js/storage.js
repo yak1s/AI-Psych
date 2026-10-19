@@ -35,6 +35,7 @@ export const session = wrap(() => sessionStorage);
 
 export const KEYS = {
   host: 'aipsych.host',
+  played: 'aipsych.played', // every question this device has ever hosted, across rooms
   player: 'aipsych.player',
   profile: 'aipsych.profile',
   muted: 'aipsych.muted',

@@ -217,7 +217,7 @@ function DeckPanel({ ctrl, view, info }) {
           </div>`}
       `}
     ${info.usedCount > 0 && html`<div class="row" style="justify-content:space-between">
-      <span class="muted small">${info.usedCount} question${info.usedCount === 1 ? '' : 's'} already used in this room (never repeated)</span>
+      <span class="muted small">${info.usedCount} question${info.usedCount === 1 ? '' : 's'} already played on this device — never repeated</span>
       <button class="link-btn" style="font-size:18px" onClick=${() => ctrl.dispatch({ type: 'resetUsed' })}>reset</button>
     </div>`}
   </div>`;

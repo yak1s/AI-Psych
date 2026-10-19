@@ -14,6 +14,9 @@ function randomCode() {
 export class HostController {
   static create(profile, onChange) {
     const room = E.createRoom({ code: randomCode(), host: profile });
+    // Questions this device has already hosted (in any room) are never asked again.
+    const prev = HostController.saved();
+    room.used = [...new Set([...local.get(KEYS.played, []), ...((prev && prev.room.used) || [])])];
     const c = new HostController(room, uid(24), onChange, true);
     c.save();
     return c;
@@ -114,6 +117,10 @@ export class HostController {
 
   save() {
     local.set(KEYS.host, { room: this.room, token: this.token, savedAt: Date.now() });
+    const played = local.get(KEYS.played, []);
+    if (this.room.used.some((id) => !played.includes(id))) {
+      local.set(KEYS.played, [...new Set([...played, ...this.room.used])].slice(-5000));
+    }
   }
 
   /** Persist and push fresh state to everyone (coalesced per tick). */
@@ -155,6 +162,7 @@ export class HostController {
     if (res.ok) {
       if (action.type === 'kick') this.net.release(action.pid, { t: 'bye', reason: 'kicked' });
       this.commit();
+      if (action.type === 'resetUsed') local.set(KEYS.played, []); // forget across rooms too
     } else {
       this.toast = { error: res.error, at: Date.now() };
       this.emit();
