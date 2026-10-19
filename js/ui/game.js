@@ -54,6 +54,7 @@ export function AiIntro({ view, onDone }) {
     }
   }, [step]);
   return html`<div class="card ai-intro enter" onClick=${onDone} data-testid="ai-intro">
+    ${g.idx === 0 && g.number > 1 && html`<div class="new-game-banner" data-testid="new-game-banner">🎉 Game ${g.number} — fresh scores! (The AI remembers everything, though.)</div>`}
     <div class="ai-title">🤖 ${generic ? 'The AI is trying to write' : 'The AI is writing'} question ${g.idx + 1}/${g.n}<span class="dots"></span></div>
     <${Bot} level=${level} />
     <div class="ai-lines">

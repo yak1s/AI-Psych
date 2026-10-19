@@ -30,7 +30,7 @@ export function HowToPlay({ onClose }) {
   <//>`;
 }
 
-export function Home({ onHost, onJoin, resumeHost, resumePlayer, onResumeHost, onResumePlayer, onForgetHost, onForgetPlayer }) {
+export function Home({ onHost, onJoin, onCheck, resumeHost, resumePlayer, onResumeHost, onResumePlayer, onForgetHost, onForgetPlayer }) {
   const [rules, setRules] = useState(false);
   return html`<div class="screen enter">
     <div class="stack" style="align-items:center;gap:22px">
@@ -54,7 +54,10 @@ export function Home({ onHost, onJoin, resumeHost, resumePlayer, onResumeHost, o
         <${Btn} big block color="coral" onClick=${onHost} testid="host-btn">${Doodle.crown({ size: 30 })} Host a game<//>
         <${Btn} big block color="sky" onClick=${onJoin} testid="join-btn">${Doodle.door({ size: 30 })} Join with a code<//>
       </div>
-      <button class="link-btn" onClick=${() => { sfx('tap'); setRules(true); }}>How do I play?</button>
+      <div class="row center" style="gap:22px">
+        <button class="link-btn" onClick=${() => { sfx('tap'); setRules(true); }}>How do I play?</button>
+        <button class="link-btn" onClick=${() => { sfx('tap'); onCheck(); }} data-testid="netcheck-btn">📡 Test my connection</button>
+      </div>
       <p class="footer-note">No accounts · no app · 2–${MAX_PLAYERS} players · works across any network</p>
     </div>
     ${rules && html`<${HowToPlay} onClose=${() => setRules(false)} />`}

@@ -34,6 +34,7 @@ export const RELAY_BROKERS = [
   'wss://broker.emqx.io:8084/mqtt',
   'wss://broker.hivemq.com:8884/mqtt',
   'wss://test.mosquitto.org:8081/mqtt',
+  'wss://mqtt.eclipseprojects.io:443/mqtt', // standard HTTPS port: passes even very strict firewalls
 ];
 
 export const TIMING = {

@@ -105,11 +105,11 @@ function CodeCard({ code }) {
   </div>`;
 }
 
-function Settings({ ctrl, info }) {
+export function Settings({ ctrl, info, title = 'Game settings' }) {
   const s = info.settings;
   const set = (patch) => ctrl.dispatch({ type: 'settings', settings: patch });
   return html`<div class="card stack" style="gap:10px">
-    <div class="card-title">${Doodle.spark({ size: 24 })} Game settings</div>
+    <div class="card-title">${Doodle.spark({ size: 24 })} ${title}</div>
     <div class="row" style="justify-content:space-between">
       <span class="script" style="font-size:24px">Questions</span>
       <${Seg} value=${s.rounds} onChange=${(v) => set({ rounds: v })} options=${ROUND_CHOICES.map((n) => ({ value: n, label: String(n) }))} />

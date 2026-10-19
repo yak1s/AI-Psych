@@ -567,3 +567,13 @@ body.spotlight .spotlight-layer { opacity: 1; }
 .score-row .arrow { font-size: 14px; margin-left: 4px; }
 .score-row .arrow.up { color: #0f7a53; }
 .score-row .arrow.down { color: #b3261e; }
+
+.new-game-banner {
+  font-family: var(--display); font-size: 18px; padding: 8px 14px; border: 2.5px solid var(--ink); border-radius: var(--wobble);
+  background-image: var(--wash-sun); background-color: var(--card); background-size: 100% 100%; animation: pop-in 0.6s var(--bounce) both;
+}
+.next-game { text-align: left; }
+
+.check-row { display: flex; gap: 12px; align-items: flex-start; padding: 6px 0; border-bottom: 1.5px dashed var(--ink-faint); }
+.check-row:last-child { border-bottom: 0; }
+.check-icon { font-size: 22px; line-height: 1.2; }

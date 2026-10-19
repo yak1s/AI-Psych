@@ -5,6 +5,7 @@ import { Home, HostSetup, JoinForm, Knocking, Ended, HowToPlay } from './home.js
 import { PlayerLobby, HostLobby } from './lobby.js';
 import { AnswerPhase, VotePhase, HostDock } from './game.js';
 import { ResultsPhase, FinalPhase } from './results.js';
+import { NetCheck } from './netcheck.js';
 import { HostController } from '../host-controller.js';
 import { PlayerController } from '../player-controller.js';
 import { sfx, isMuted, setMuted, onMuteChange } from './audio.js';
@@ -124,7 +125,7 @@ function TopBar({ ctrl, view, onMenu, onHome }) {
   return html`<header class="topbar">
     <button class="logo-mini" onClick=${onHome} aria-label="AI Psych home"><span class="logo-text">AI Psych</span><span class="eye-dot">${Doodle.eye({ size: 22 })}</span></button>
     <div class="grow"></div>
-    ${g && g.phase !== 'final' && html`<span class="chip">Q ${g.idx + 1}/${g.n}</span>`}
+    ${g && g.phase !== 'final' && html`<span class="chip">${g.number > 1 ? `G${g.number} · ` : ''}Q ${g.idx + 1}/${g.n}</span>`}
     ${view && html`<span class="chip code" title="Room code">#${view.code}</span>`}
     ${info && html`<span class=${cx('net-dot', info.bad && 'bad', info.meh && 'meh')} title=${info.text} aria-label=${info.text}></span>`}
     <${MuteButton} />
@@ -241,6 +242,8 @@ export function App({ boot }) {
   } else if (ctrl && !ctrl.isHost) {
     content = html`<${Knocking} code=${ctrl.identity.code} status=${ctrl.status} since=${knockSince.current}
       onCancel=${() => { setCtrl(null); session.del(KEYS.role); setJoinCode(''); setMode('join'); }} />`;
+  } else if (mode === 'netcheck') {
+    content = html`<${NetCheck} onClose=${() => setMode('home')} />`;
   } else if (mode === 'host-setup') {
     content = html`<${HostSetup} onBack=${() => setMode('home')} onCreate=${(profile) => {
       const c = HostController.create(profile, rerender);
@@ -258,7 +261,7 @@ export function App({ boot }) {
   } else {
     content = html`<${Home}
       resumeHost=${hostSaved} resumePlayer=${playerSaved}
-      onHost=${() => setMode('host-setup')} onJoin=${() => setMode('join')}
+      onHost=${() => setMode('host-setup')} onJoin=${() => setMode('join')} onCheck=${() => setMode('netcheck')}
       onResumeHost=${() => { const c = HostController.resume(rerender); claimHost(c); setCtrl(c); }}
       onResumePlayer=${() => { knockSince.current = Date.now(); setCtrl(PlayerController.resume(rerender)); }}
       onForgetHost=${() => { local.del(KEYS.host); rerender(); }}

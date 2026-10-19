@@ -355,7 +355,11 @@ export class ClientNet {
         this._fail(this.conn);
       }
     }
-    if (this.key) this._relaySend(ping);
+    // Keep the relay warm, but gently (public brokers): every ~4s while the direct path is fine.
+    if (this.key && (!this.rtcOpen || Date.now() - (this.lastRelayPing || 0) > 3900)) {
+      this.lastRelayPing = Date.now();
+      this._relaySend(ping);
+    }
   }
 
   _heartbeat() {

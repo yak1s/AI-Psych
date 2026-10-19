@@ -375,6 +375,9 @@ function finishGame(room, ctx, reason) {
     r.rank = rank;
   });
   g.final = { ranking: sorted, awards: computeAwards(room, g, sorted), reason, rounds: g.history.length };
+  // Room trophy cabinet: wins carry over from game to game.
+  room.wins = room.wins || {};
+  if (g.history.length) for (const r of sorted) if (r.rank === 1 && r.score > 0) room.wins[r.pid] = (room.wins[r.pid] || 0) + 1;
 }
 
 const AWARD_COUNT = 4;
@@ -658,6 +661,7 @@ export function viewFor(room, pid, ctx) {
     players: activePlayers(room).map((p) => publicPlayer(p, ctx)),
     settings: { rounds: room.settings.rounds, showMeter: room.settings.showMeter, subjectAnswers: room.settings.subjectAnswers, timeLimit: room.settings.timeLimit || 'off' },
     gamesPlayed: room.gamesPlayed,
+    wins: room.wins || {},
     game: null,
   };
   if (!g) return view;

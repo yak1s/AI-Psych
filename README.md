@@ -126,6 +126,10 @@ Templates for all three formats are in [`decks/`](decks/), and the lobby has a *
 
 ---
 
+## Before game night: test the connection
+
+Open the site and tap **📡 Test my connection** (or send people `https://<you>.github.io/<repo>/?check`). It checks, from that phone and that network: the room finder, direct peer-to-peer (STUN/TURN), and every backup relay, then says plainly whether you can play. Ask someone in each country to run it once.
+
 ## Deploy to GitHub Pages
 
 This is a plain static site, with no build step and all libraries and fonts included in the repo.

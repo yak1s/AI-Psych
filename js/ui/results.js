@@ -2,6 +2,7 @@ import { html, useState, useEffect, useRef } from '../vendor/preact-htm.js';
 import { Btn, Avatar, PName, QuestionText, Doodle, cx, playerMap, useStep, confetti } from './common.js';
 import { brush, wash } from './art.js';
 import { seen, markSeen } from '../storage.js';
+import { Settings } from './lobby.js';
 import { sfx, buzz } from './audio.js';
 
 // ---------------------------------------------------------------------------
@@ -200,6 +201,40 @@ export function ResultsPhase({ ctrl, view }) {
 }
 
 // ---------------------------------------------------------------------------
+// Between games
+
+function Trophies({ view, who }) {
+  const rows = Object.entries(view.wins || {}).filter(([pid]) => view.players.some((p) => p.id === pid)).sort((a, b) => b[1] - a[1]);
+  if (!rows.length || (view.gamesPlayed || 0) < 2) return null;
+  return html`<div class="card" style="width:100%;text-align:left" data-testid="trophies">
+    <div class="card-title">🏆 Trophy cabinet — ${view.gamesPlayed} games in this room</div>
+    ${rows.map(([pid, n]) => html`<div key=${pid} class="row" style="justify-content:space-between;padding:3px 0">
+      <span class="row" style="gap:10px"><${Avatar} p=${who(pid)} size="sm" /> <${PName} p=${who(pid)} /></span>
+      <span style="font-size:22px">${'🏆'.repeat(Math.min(n, 6))}${n > 6 ? ' ×' + n : ''}</span>
+    </div>`)}
+  </div>`;
+}
+
+function NextGame({ ctrl, view }) {
+  const g = view.game;
+  const info = view.host;
+  const pool = info.pool;
+  const n = Math.min(info.settings.rounds, pool.total);
+  return html`<div class="stack next-game" style="width:100%" data-testid="next-game">
+    <div class="card">
+      <div class="card-title">🔁 Ready for game ${g.number + 1}?</div>
+      <p style="margin:0">Same room and players. Scores start from zero, the trophy cabinet keeps counting, and the AI never asks a question twice.</p>
+    </div>
+    <${Settings} ctrl=${ctrl} info=${info} title=${`Settings for game ${g.number + 1}`} />
+    <p class="muted small center" style="margin:0">${pool.total ? `${pool.total} fresh question${pool.total === 1 ? '' : 's'} left${pool.total < info.settings.rounds ? ` — this game will be ${pool.total} long` : ''}.` : 'No fresh questions left — go back to the lobby to load another deck or reset.'}</p>
+    <div class="row center">
+      <${Btn} color="paper" sound="tap" onClick=${() => ctrl.dispatch({ type: 'endGame' })} testid="back-lobby">Lobby (deck & players)<//>
+      <${Btn} big color="coral" pulse disabled=${!pool.total} onClick=${() => ctrl.dispatch({ type: 'playAgain' })} sound="whoosh" testid="play-again">▶ Start game ${g.number + 1} (${n} questions)<//>
+    </div>
+  </div>`;
+}
+
+// ---------------------------------------------------------------------------
 // Final ceremony
 
 function PodiumStep({ r, place, who }) {
@@ -292,13 +327,14 @@ export function FinalPhase({ ctrl, view }) {
         </div>`)}
       </div>
       ${f.reason === 'out-of-questions' && html`<p class="muted small">The AI ran out of fresh questions for this group, so the game ended early.</p>`}
+      <${Trophies} view=${view} who=${who} />
       ${isHost
-        ? html`<div class="row center">
-            <${Btn} color="paper" sound="tap" onClick=${() => ctrl.dispatch({ type: 'endGame' })} testid="back-lobby">Back to lobby<//>
-            <${Btn} big color="coral" pulse onClick=${() => ctrl.dispatch({ type: 'playAgain' })} sound="whoosh" testid="play-again">🔁 Play again<//>
-          </div>
-          <p class="muted small">New game, same room — the AI never repeats a question.</p>`
-        : html`<p class="script" style="font-size:24px">Waiting for the host to start another round<span class="dots"></span></p>`}
+        ? html`<${NextGame} ctrl=${ctrl} view=${view} />`
+        : html`<div class="card next-game" style="width:100%">
+            <div class="card-title">🔁 Game ${g.number + 1} is coming up</div>
+            <p style="margin:0">Same room, same players, <b>fresh scores</b> — and the AI still remembers everything (no question is ever asked twice).</p>
+            <p class="script" style="font-size:22px;margin:8px 0 0">The host is choosing the settings<span class="dots"></span></p>
+          </div>`}
     `}
   </div>`;
 }
