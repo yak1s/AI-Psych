@@ -1,20 +1,93 @@
-// Host side of the network: owns the well-known room peer id, accepts player
-// connections, heartbeats them and reports presence. It never gives up — if
-// the signaling server or the internet drops, it keeps reconnecting while the
-// already-established peer-to-peer channels keep working.
+// Host side of the network. Every player device gets a Link with up to two
+// transports:
+//   • direct: a WebRTC data channel (fast, peer-to-peer; found via PeerJS)
+//   • relay:  end-to-end encrypted messages through public MQTT brokers, for
+//             networks where WebRTC can't connect (VPNs, strict NATs, carriers)
+// Messages go over whichever transport is alive (direct preferred). Both sides
+// heartbeat on both transports, so a dead path is noticed in seconds and the
+// other one simply takes over — players don't even see a "reconnecting" blip.
 
 import { Peer } from '../vendor/peer.js';
-import { peerOptions, hostPeerId, TIMING } from '../config.js';
+import { peerOptions, hostPeerId, TIMING, relayBrokers, relayTopic, rtcEnabled } from '../config.js';
+import { Relay } from './mqtt.js';
+import { cryptoReady, newKeyPair, exportPublic, deriveShared, seal, unseal, plain, unplain } from './secure.js';
 
 const RECOVERABLE = new Set(['network', 'server-error', 'socket-error', 'socket-closed', 'disconnected', 'unavailable-id', 'webrtc']);
+const MAX_LINKS = 80;
+
+class Link {
+  constructor(net, chan) {
+    this.net = net;
+    this.chan = chan;
+    this.pid = null;
+    this.born = Date.now();
+    this.rtc = null;
+    this.lastRtc = 0;
+    this.key = null; // AES key for the relay
+    this.lastRelay = 0;
+    this.wasAlive = false;
+  }
+
+  get rtcOpen() {
+    return !!(this.rtc && this.rtc.open && Date.now() - this.lastRtc < TIMING.deadAfter);
+  }
+
+  get relayOpen() {
+    return !!(this.key && Date.now() - this.lastRelay < TIMING.deadAfter);
+  }
+
+  get alive() {
+    return this.rtcOpen || this.relayOpen;
+  }
+
+  get transport() {
+    return this.rtcOpen ? 'direct' : this.relayOpen ? 'relay' : 'none';
+  }
+
+  send(msg) {
+    if (this.net._dark()) return false;
+    if (this.rtc && this.rtc.open && this.rtcOpen) {
+      try {
+        this.rtc.send(msg);
+        return true;
+      } catch {
+        this.dropRtc();
+      }
+    }
+    if (this.key) {
+      this.net._relaySend(this, msg);
+      return true;
+    }
+    return false;
+  }
+
+  dropRtc() {
+    const c = this.rtc;
+    this.rtc = null;
+    if (c) {
+      try {
+        c.close();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  close() {
+    this.dropRtc();
+    if (this.key) this.net.relay && this.net.relay.unsubscribe(relayTopic('c', this.chan, 'up'));
+    this.key = null;
+  }
+}
 
 export class HostNet {
   /**
    * @param {object} o
    * @param {string} o.code  4-digit room code
    * @param {string} o.token secret token so a refreshed host can reclaim its peer id instantly
-   * @param {(conn, msg) => void} o.onHello
+   * @param {(link, msg) => void} o.onHello
    * @param {(pid, msg) => void} o.onAction
+   * @param {(pid, msg) => void} o.onDraft
    * @param {(pid, online) => void} o.onPresence
    * @param {(status, detail) => void} o.onStatus
    */
@@ -22,11 +95,11 @@ export class HostNet {
     this.o = o;
     this.code = o.code;
     this.peer = null;
-    this.status = 'connecting';
-    this.byPid = new Map(); // pid -> conn
-    this.meta = new Map(); // conn -> { pid, lastSeen, born }
+    this.peerStatus = 'connecting';
+    this.relayUp = false;
+    this.links = new Map(); // chan -> Link
+    this.byPid = new Map(); // pid -> Link
     this.retry = 0;
-    this.idTaken = 0;
     this.timer = null;
     this.stopped = false;
     this._beat = setInterval(() => this._heartbeat(), TIMING.heartbeat);
@@ -36,7 +109,10 @@ export class HostNet {
   }
 
   start() {
-    this._createPeer();
+    if (rtcEnabled()) this._createPeer();
+    else this.peerStatus = 'off';
+    this._startRelay();
+    this._emitStatus();
   }
 
   stop() {
@@ -45,22 +121,9 @@ export class HostNet {
     clearTimeout(this.timer);
     removeEventListener('online', this._wake);
     document.removeEventListener('visibilitychange', this._wake);
-    for (const conn of this.meta.keys()) this._safeClose(conn);
+    for (const link of this.links.values()) link.close();
     if (this.peer) this.peer.destroy();
-  }
-
-  isOnline(pid) {
-    const c = this.byPid.get(pid);
-    return !!(c && c.open);
-  }
-
-  onlinePids() {
-    return [...this.byPid.keys()].filter((pid) => this.isOnline(pid));
-  }
-
-  send(pid, msg) {
-    const conn = this.byPid.get(pid);
-    return conn ? this.sendConn(conn, msg) : false;
+    if (this.relay) this.relay.close();
   }
 
   /** Dev tool: silently drop all traffic for `ms`. */
@@ -72,48 +135,70 @@ export class HostNet {
     return this.blackhole && Date.now() < this.blackhole;
   }
 
-  sendConn(conn, msg) {
-    if (!conn || !conn.open || this._dark()) return false;
-    try {
-      conn.send(msg);
-      return true;
-    } catch {
-      this._drop(conn);
-      return false;
-    }
+  isOnline(pid) {
+    const l = this.byPid.get(pid);
+    return !!(l && l.alive);
   }
 
-  /** Attach an accepted connection to a player (replacing any older one). */
-  bind(conn, pid) {
-    const m = this.meta.get(conn);
-    if (!m) return;
+  onlinePids() {
+    return [...this.byPid.keys()].filter((pid) => this.isOnline(pid));
+  }
+
+  transportOf(pid) {
+    const l = this.byPid.get(pid);
+    return l ? l.transport : 'none';
+  }
+
+  send(pid, msg) {
+    const link = this.byPid.get(pid);
+    return link ? link.send(msg) : false;
+  }
+
+  /** Attach a link to a player (replacing any older one). */
+  bind(link, pid) {
     const old = this.byPid.get(pid);
-    if (old && old !== conn) {
-      this.sendConn(old, { t: 'bye', reason: 'replaced' });
-      this.meta.delete(old);
-      setTimeout(() => this._safeClose(old), 300);
+    if (old && old !== link) {
+      old.send({ t: 'bye', reason: 'replaced' });
+      old.pid = null;
+      setTimeout(() => this._remove(old), 400);
     }
-    m.pid = pid;
-    this.byPid.set(pid, conn);
+    link.pid = pid;
+    link.wasAlive = true;
+    this.byPid.set(pid, link);
     this.o.onPresence(pid, true);
   }
 
   /** Forget a player entirely (kicked / left). */
   release(pid, bye) {
-    const conn = this.byPid.get(pid);
-    if (!conn) return;
-    if (bye) this.sendConn(conn, bye);
+    const link = this.byPid.get(pid);
+    if (!link) return;
+    if (bye) link.send(bye);
     this.byPid.delete(pid);
-    this.meta.delete(conn);
-    setTimeout(() => this._safeClose(conn), 400);
+    link.pid = null;
+    setTimeout(() => this._remove(link), 500);
   }
 
   // -------------------------------------------------------------------------
+  // status
 
-  _setStatus(status, detail) {
-    this.status = status;
-    this.o.onStatus(status, detail);
+  get status() {
+    if (this.peerStatus === 'unsupported' && !this.relayUp) return 'unsupported';
+    if (this.peerStatus === 'online' || this.relayUp) return 'online';
+    if (this.peerStatus === 'id-taken') return 'id-taken';
+    return this.peerStatus === 'connecting' ? 'connecting' : 'reconnecting';
   }
+
+  _setPeerStatus(s, detail) {
+    this.peerStatus = s;
+    this._emitStatus(detail);
+  }
+
+  _emitStatus(detail) {
+    this.o.onStatus(this.status, detail, { direct: this.peerStatus, relay: this.relayUp });
+  }
+
+  // -------------------------------------------------------------------------
+  // direct (PeerJS / WebRTC)
 
   _createPeer() {
     if (this.stopped) return;
@@ -124,22 +209,27 @@ export class HostNet {
         /* ignore */
       }
     }
-    this._setStatus('connecting');
-    const peer = new Peer(hostPeerId(this.code), { ...peerOptions(), token: this.o.token });
+    this._setPeerStatus('connecting');
+    let peer;
+    try {
+      peer = new Peer(hostPeerId(this.code), { ...peerOptions(), token: this.o.token });
+    } catch {
+      this._setPeerStatus('unsupported');
+      return;
+    }
     this.peer = peer;
     peer.on('open', () => {
       if (peer !== this.peer) return;
       this.retry = 0;
-      this.idTaken = 0;
-      this._setStatus('online');
+      this._setPeerStatus('online');
     });
     peer.on('connection', (conn) => {
       if (peer === this.peer) this._accept(conn);
     });
     const lost = () => {
       if (peer !== this.peer || this.stopped) return;
-      if (this.status === 'id-taken') return; // retry already scheduled (with a longer delay)
-      this._setStatus('reconnecting');
+      if (this.peerStatus === 'id-taken') return; // retry already scheduled (with a longer delay)
+      this._setPeerStatus('reconnecting');
       this._schedule();
     };
     peer.on('disconnected', lost);
@@ -148,13 +238,13 @@ export class HostNet {
       if (peer !== this.peer || this.stopped) return;
       const type = err && err.type;
       if (type === 'unavailable-id') {
-        this.idTaken++;
-        this._setStatus('id-taken', this.idTaken);
+        this.idTaken = (this.idTaken || 0) + 1;
+        this._setPeerStatus('id-taken', this.idTaken);
         this._schedule(2500);
       } else if (type === 'browser-incompatible') {
-        this._setStatus('unsupported');
+        this._setPeerStatus('unsupported');
       } else if (RECOVERABLE.has(type)) {
-        this._setStatus('reconnecting');
+        this._setPeerStatus('reconnecting');
         this._schedule();
       }
     });
@@ -169,13 +259,12 @@ export class HostNet {
   }
 
   _recover() {
-    if (this.stopped) return;
+    if (this.stopped || !rtcEnabled()) return;
     const peer = this.peer;
     if (!peer || peer.destroyed) return this._createPeer();
     if (peer.disconnected) {
       try {
         peer.reconnect();
-        // if the reconnect silently stalls, try again
         this.timer = setTimeout(() => {
           if (this.peer === peer && !peer.open) this._schedule();
         }, 8000);
@@ -188,76 +277,183 @@ export class HostNet {
   _poke() {
     if (document.visibilityState === 'hidden' || this.stopped) return;
     const peer = this.peer;
-    if (!peer || peer.destroyed || peer.disconnected) {
+    if (rtcEnabled() && (!peer || peer.destroyed || peer.disconnected)) {
       this.retry = 0;
       this._schedule(50);
     }
     this._heartbeat();
   }
 
+  _link(chan) {
+    let link = this.links.get(chan);
+    if (!link) {
+      if (this.links.size >= MAX_LINKS) this._gc(true);
+      link = new Link(this, chan);
+      this.links.set(chan, link);
+    }
+    return link;
+  }
+
   _accept(conn) {
-    const m = { pid: null, lastSeen: Date.now(), born: Date.now() };
-    this.meta.set(conn, m);
+    const meta = conn.metadata || {};
+    const chan = typeof meta.chan === 'string' && meta.chan.length < 64 ? meta.chan : 'rtc-' + conn.connectionId;
+    const link = this._link(chan);
+    if (link.rtc && link.rtc !== conn) link.dropRtc();
+    link.rtc = conn;
     conn.on('open', () => {
-      m.lastSeen = Date.now();
+      if (link.rtc === conn) link.lastRtc = Date.now();
     });
-    conn.on('data', (msg) => this._onData(conn, msg));
-    conn.on('close', () => this._drop(conn));
-    conn.on('error', () => this._drop(conn));
+    conn.on('data', (msg) => {
+      if (link.rtc !== conn || this._dark()) return;
+      link.lastRtc = Date.now();
+      this._onMessage(link, msg);
+    });
+    const drop = () => {
+      if (link.rtc === conn) {
+        link.rtc = null;
+        this._presence(link);
+      }
+    };
+    conn.on('close', drop);
+    conn.on('error', drop);
     conn.on('iceStateChanged', (s) => {
-      if (s === 'failed' || s === 'closed') this._drop(conn);
+      if (s === 'failed' || s === 'closed') {
+        link.dropRtc();
+        drop();
+      }
     });
   }
 
-  _onData(conn, msg) {
-    const m = this.meta.get(conn);
-    if (!m || !msg || typeof msg !== 'object' || this._dark()) return;
-    m.lastSeen = Date.now();
+  // -------------------------------------------------------------------------
+  // relay (MQTT)
+
+  _startRelay() {
+    const urls = relayBrokers();
+    if (!urls.length || !cryptoReady() || typeof WebSocket === 'undefined') return;
+    this.relay = new Relay(
+      urls,
+      (topic, kind, body) => this._relayIn(topic, kind, body),
+      (up) => {
+        this.relayUp = up;
+        this._emitStatus();
+      },
+    );
+    this.relay.subscribe(relayTopic('r', this.code, 'join'));
+  }
+
+  async _relayIn(topic, kind, body) {
+    if (this.stopped || this._dark()) return;
+    const parts = topic.split('/');
+    try {
+      if (parts[parts.length - 1] === 'join' && kind === 0) {
+        // A player wants to talk through the relay: ECDH handshake.
+        const req = unplain(body);
+        if (typeof req.chan !== 'string' || req.chan.length > 64 || typeof req.pub !== 'string') return;
+        const link = this._link(req.chan);
+        if (!link.hs || link.hs.peerPub !== req.pub) {
+          const kp = await newKeyPair();
+          link.key = await deriveShared(kp, req.pub);
+          link.hs = { peerPub: req.pub, pub: await exportPublic(kp) };
+          this.relay.subscribe(relayTopic('c', req.chan, 'up'));
+        }
+        this.relay.publish(relayTopic('c', req.chan, 'down'), 0, plain({ t: 'hs', pub: link.hs.pub }));
+        return;
+      }
+      if (kind === 1 && parts[parts.length - 1] === 'up') {
+        const chan = parts[parts.length - 2];
+        const link = this.links.get(chan);
+        if (!link || !link.key) return;
+        const msg = await unseal(link.key, body);
+        link.lastRelay = Date.now();
+        this._onMessage(link, msg);
+      }
+    } catch {
+      /* bad or foreign message — ignore */
+    }
+  }
+
+  async _relaySend(link, msg) {
+    if (!this.relay || !link.key) return;
+    try {
+      const bytes = await seal(link.key, msg);
+      this.relay.publish(relayTopic('c', link.chan, 'down'), 1, bytes);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // -------------------------------------------------------------------------
+
+  _onMessage(link, msg) {
+    if (!msg || typeof msg !== 'object') return;
+    this._presence(link);
+    // Traffic from a device we haven't identified yet (e.g. after a host refresh): ask who it is.
+    if (msg.t !== 'hello' && (!link.pid || this.byPid.get(link.pid) !== link) && Date.now() - (link.askedAt || 0) > 2000) {
+      link.askedAt = Date.now();
+      link.send({ t: 'who' });
+    }
     switch (msg.t) {
       case 'ping':
-        this.sendConn(conn, { t: 'pong', ts: msg.ts });
-        break;
       case 'pong':
         break;
       case 'hello':
-        this.o.onHello(conn, msg);
+        this.o.onHello(link, msg);
         break;
       case 'act':
-        if (m.pid && this.byPid.get(m.pid) === conn) this.o.onAction(m.pid, msg);
+        if (link.pid && this.byPid.get(link.pid) === link) this.o.onAction(link.pid, msg);
+        break;
+      case 'draft':
+        if (link.pid && this.byPid.get(link.pid) === link) this.o.onDraft(link.pid, msg);
         break;
       default:
         break;
     }
   }
 
-  _drop(conn) {
-    const m = this.meta.get(conn);
-    if (!m) return;
-    this.meta.delete(conn);
-    this._safeClose(conn);
-    if (m.pid && this.byPid.get(m.pid) === conn) {
-      this.byPid.delete(m.pid);
-      this.o.onPresence(m.pid, false);
-    }
+  _presence(link) {
+    const alive = link.alive;
+    if (alive === link.wasAlive) return;
+    link.wasAlive = alive;
+    if (link.pid && this.byPid.get(link.pid) === link) this.o.onPresence(link.pid, alive);
   }
 
-  _safeClose(conn) {
-    try {
-      conn.close();
-    } catch {
-      /* ignore */
+  _remove(link) {
+    link.close();
+    if (this.links.get(link.chan) === link) this.links.delete(link.chan);
+  }
+
+  _gc(force) {
+    const now = Date.now();
+    for (const link of this.links.values()) {
+      const idle = now - Math.max(link.born, link.lastRtc, link.lastRelay);
+      if (!link.pid && (idle > 30000 || (force && !link.alive))) this._remove(link);
+      else if (link.pid && this.byPid.get(link.pid) !== link) this._remove(link);
     }
   }
 
   _heartbeat() {
+    if (this.stopped) return;
     const now = Date.now();
-    for (const [conn, m] of this.meta) {
-      // Silent for too long, or connected but never said who it is: drop it.
-      if (now - m.lastSeen > TIMING.deadAfter || (!m.pid && now - m.born > TIMING.connectTimeout + 8000)) {
-        this._drop(conn);
-        continue;
+    for (const link of this.links.values()) {
+      // A direct channel that went silent is dead: drop it (the relay may still carry us).
+      if (link.rtc && link.rtc.open && link.lastRtc && now - link.lastRtc > TIMING.deadAfter) link.dropRtc();
+      if (link.rtc && !link.rtc.open && now - link.born > TIMING.connectTimeout + 8000 && !link.lastRtc) link.dropRtc();
+      this._presence(link);
+      if (this._dark()) continue;
+      const ping = { t: 'ping', ts: now };
+      if (link.rtc && link.rtc.open) {
+        try {
+          link.rtc.send(ping);
+        } catch {
+          link.dropRtc();
+        }
       }
-      if (conn.open) this.sendConn(conn, { t: 'ping', ts: now });
+      // Keep the relay warm (every ~4s) so it can take over instantly if the direct path dies.
+      if (link.key && (!link.rtcOpen || now - (link.lastRelayPing || 0) > 3900)) {
+        link.lastRelayPing = now;
+        this._relaySend(link, ping);
+      }
     }
+    this._gc(false);
   }
 }

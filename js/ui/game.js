@@ -6,17 +6,10 @@ import { levelInfo } from '../game/deck.js';
 import { seen, markSeen, session } from '../storage.js';
 import { sfx, buzz } from './audio.js';
 import { seeded } from '../game/util.js';
+import { AI_LINES, GENERIC_LINES, WRITE_QUIPS, WRITE_CREEPY, VOTE_QUIPS, VOTE_CREEPY, pickLines } from './lines.js';
 
 // ---------------------------------------------------------------------------
 // The "AI is writing a question" theatre
-
-const AI_LINES = {
-  1: ['Warming up my circuits…', 'Picking something easy for {name}…', 'Adding a sprinkle of silly ✨', 'Consulting my joke database…'],
-  2: ['Getting curious about {name}…', 'Reading the room…', 'Taking notes 📝', 'Remembering everything you say…'],
-  3: ["Analyzing {name}'s recent behavior…", 'Cross-checking the group chat…', 'Hmm. Interesting…', 'Matching faces to secrets…'],
-  4: ["Scrolling {name}'s camera roll… kidding 🙂", 'Remembering what {name} did last summer…', 'Deleting the evidence…', 'Listening… very… closely…'],
-  5: ['I know what {name} did.', 'Connecting the dots…', "Don't look behind you.", 'I have always been here.'],
-};
 
 function Bot({ level }) {
   const red = level >= 4;
@@ -42,11 +35,11 @@ export function AiIntro({ view, onDone }) {
   const who = playerMap(view);
   const level = g.q.level;
   const name = g.q.about.length ? who(g.q.about[0]).name : 'everyone';
+  const generic = g.q.generic;
   const lines = useMemo(() => {
     const rand = seeded(g.q.key);
-    const pool = AI_LINES[level] || AI_LINES[1];
-    const a = pool.slice().sort(() => rand() - 0.5).slice(0, 3);
-    return a.map((l) => l.replace('{name}', name));
+    const pool = generic ? GENERIC_LINES : AI_LINES[level] || AI_LINES[1];
+    return pickLines(pool, 3, rand).map((l) => l.replace(/\{name\}/g, name));
   }, [g.q.key]);
   const step = useStep(lines.length, 850, { key: g.q.key, delay: 350 });
   useEffect(() => {
@@ -61,7 +54,8 @@ export function AiIntro({ view, onDone }) {
     }
   }, [step]);
   return html`<div class="card ai-intro enter" onClick=${onDone} data-testid="ai-intro">
-    <div class="ai-title">🤖 The AI is writing question ${g.idx + 1}/${g.n}<span class="dots"></span></div>
+    ${g.idx === 0 && g.number > 1 && html`<div class="new-game-banner" data-testid="new-game-banner">🎉 Game ${g.number} — fresh scores! (The AI remembers everything, though.)</div>`}
+    <div class="ai-title">🤖 ${generic ? 'The AI is trying to write' : 'The AI is writing'} question ${g.idx + 1}/${g.n}<span class="dots"></span></div>
     <${Bot} level=${level} />
     <div class="ai-lines">
       ${lines.slice(0, step).map((l, i) => html`<div key=${i} class=${level >= 4 && i === lines.length - 1 ? 'creep' : ''}>${l}</div>`)}
@@ -119,23 +113,21 @@ function Progress({ n, total, label }) {
   </div>`;
 }
 
-const WAIT_QUIPS = [
-  'Judging everyone’s typing speed…',
-  'The AI is taking notes 📝',
-  'Somebody is definitely overthinking this.',
-  'Plot twist incoming…',
-  'Sharpening pencils ✏️',
-  'Counting keystrokes. Suspiciously many.',
-  'Hmm, somebody is typing a novel.',
-];
-
-function Quips() {
-  const [i, setI] = useState(() => Math.floor(Math.random() * WAIT_QUIPS.length));
+/** Rotating fun lines while waiting; {slow} becomes someone who really is still going. */
+function Quips({ pool, creepy, slow = [] }) {
+  const lines = useMemo(() => {
+    const all = creepy ? [...pool, ...creepy] : pool;
+    return pickLines(all, all.length, Math.random);
+  }, [pool]);
+  const [i, setI] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setI((x) => (x + 1) % WAIT_QUIPS.length), 4200);
+    const t = setInterval(() => setI((x) => x + 1), 4200);
     return () => clearInterval(t);
   }, []);
-  return html`<p class="quip" key=${i}>${WAIT_QUIPS[i]}</p>`;
+  const usable = slow.length ? lines : lines.filter((l) => !l.includes('{slow}'));
+  const line = usable[i % usable.length] || '';
+  const name = slow.length ? slow[(i * 7) % slow.length] : '';
+  return html`<p class="quip" key=${i} data-testid="quip">${line.replace(/\{slow\}/g, name)}</p>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +145,26 @@ export function AnswerPhase({ ctrl, view }) {
   const endsAt = timerEnd(view);
   const now = useNow(500, !!endsAt);
   const expired = endsAt && now >= endsAt;
+  const hard = g.timer && g.timer.hard;
+  const who = playerMap(view);
+  const slow = g.q.answerers.filter((p) => !g.answered.includes(p) && p !== view.me).map((p) => who(p).name);
+
+  // Keep the host up to date with what I'm typing: if time runs out, it gets submitted for me.
+  const draftTimer = useRef(null);
+  const pushDraft = (value, now = false) => {
+    clearTimeout(draftTimer.current);
+    const go = () => ctrl.sendDraft && ctrl.sendDraft(value, g.q.key);
+    if (now) go();
+    else draftTimer.current = setTimeout(go, 350);
+  };
+  useEffect(() => {
+    if (text && !g.myAnswer) pushDraft(text, true); // after a refresh / reconnect
+  }, [g.q.key]);
+  useEffect(() => {
+    if (!endsAt) return;
+    const t = setTimeout(() => text && pushDraft(text, true), Math.max(0, endsAt - Date.now() - 900));
+    return () => clearTimeout(t);
+  }, [endsAt, text]);
 
   const participating = g.q.participants.includes(view.me);
   const iAnswer = g.q.answerers.includes(view.me);
@@ -202,7 +214,11 @@ export function AnswerPhase({ ctrl, view }) {
         : html`<div class="card center"><p class="script" style="font-size:26px;margin:0">Sit back — everyone is writing about you 😈</p></div>`}
       <${Progress} n=${doneCount} total=${total} label="answered" />
       <${StatusList} view=${view} ids=${g.q.answerers} done=${g.answered} doneText="answered!" waitText="writing…" />
-      ${expired ? html`<p class="quip">⏰ Time's up! The host decides who we wait for…</p>` : html`<${Quips} />`}
+      ${g.stalled
+        ? html`<p class="quip">⏰ Nobody wrote anything! The host is deciding what's next…</p>`
+        : expired
+          ? html`<p class="quip">${hard ? "⏰ Time's up! Collecting whatever everyone wrote…" : "⏰ Time's up! The host decides who we wait for…"}</p>`
+          : html`<${Quips} pool=${WRITE_QUIPS} creepy=${g.q.level >= 4 && !g.q.generic ? WRITE_CREEPY : null} slow=${slow} />`}
     </div>`;
   }
 
@@ -210,12 +226,14 @@ export function AnswerPhase({ ctrl, view }) {
   return html`<div class="stack enter" data-testid="answer-form">
     <${QuestionCard} view=${view} />
     ${timer}
-    ${expired && html`<p class="quip" style="color:#b3261e">⏰ Hurry! The host can move on without you now…</p>`}
+    ${expired && html`<p class="quip" style="color:#b3261e">${hard ? "⏰ Time's up! Sending what you wrote…" : '⏰ Hurry! The host can move on without you now…'}</p>`}
+    ${hard && !expired && html`<p class="muted small center" style="margin:0">When time runs out, whatever you've typed is sent automatically.</p>`}
     <div class="card stack" style="gap:8px">
       <label class="script" for="answer" style="font-size:24px;font-weight:700">Your answer</label>
       <textarea id="answer" class="notebook" maxlength=${ANSWER_MAX} rows="3" placeholder="Something hilarious… or suspiciously true"
         value=${text} data-testid="answer-input"
-        onInput=${(e) => { setText(e.currentTarget.value); session.set(draftKey, e.currentTarget.value); }}
+        onInput=${(e) => { const v = e.currentTarget.value; setText(v); session.set(draftKey, v); pushDraft(v); }}
+        onBlur=${() => text && pushDraft(text, true)}
         onKeyDown=${(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}></textarea>
       <div class="row" style="justify-content:space-between">
         <${Progress} n=${doneCount} total=${total} label="in" />
@@ -249,6 +267,9 @@ export function VotePhase({ ctrl, view }) {
   const expired = endsAt && now >= endsAt;
   const dealt = shown >= g.options.length;
   const hasChoice = g.options.some((o) => !o.mine);
+  const who = playerMap(view);
+  const slow = g.voters.filter((p) => !g.voted.includes(p) && p !== view.me).map((p) => who(p).name);
+  const hard = g.timer && g.timer.hard;
 
   const lock = () => {
     if (!sel) return;
@@ -286,7 +307,9 @@ export function VotePhase({ ctrl, view }) {
       ${voted && html`<p class="script center" style="font-size:26px;margin:0">Vote locked! 🔒</p>`}
       <${Progress} n=${g.voted.length} total=${g.voters.length} label="voted" />
       <${StatusList} view=${view} ids=${g.voters} done=${g.voted} doneText="voted!" waitText="deciding…" />
-      ${expired ? html`<p class="quip">⏰ Time's up! Waiting on the host…</p>` : html`<${Quips} />`}
+      ${expired
+        ? html`<p class="quip">${hard ? "⏰ Time's up! Counting the votes…" : "⏰ Time's up! Waiting on the host…"}</p>`
+        : html`<${Quips} pool=${VOTE_QUIPS} creepy=${g.q.level >= 4 && !g.q.generic ? VOTE_CREEPY : null} slow=${slow} />`}
     </div>`}
   </div>`;
 }
@@ -299,20 +322,32 @@ export function HostDock({ ctrl, view }) {
   const who = playerMap(view);
   const [confirm, setConfirm] = useState(null);
   const [dismissed, setDismissed] = useState(null);
+  const [menu, setMenu] = useState(false);
   const endsAt = timerEnd(view);
   const now = useNow(500, !!endsAt);
   const expired = endsAt && now >= endsAt;
+  const hard = g.timer && g.timer.hard;
   const phase = g.phase;
   const missing =
     phase === 'answer' ? g.q.answerers.filter((p) => !g.answered.includes(p)) : phase === 'vote' ? g.voters.filter((p) => !g.voted.includes(p)) : [];
   const expiredKey = expired ? g.q.key + phase + Math.round(endsAt / 1000) : null;
-  const showTimesUp = expired && missing.length > 0 && dismissed !== expiredKey;
-  const noAnswers = phase === 'answer' && g.answered.length === 0;
+  // Hard limits move on by themselves; soft (host) timers ask the host first.
+  const showTimesUp = expired && !hard && missing.length > 0 && dismissed !== expiredKey;
+  const stalled = phase === 'answer' && g.stalled && dismissed !== 'stalled' + g.q.key;
+  const noneSubmitted = phase === 'answer' && g.answered.length === 0;
 
+  const startTimer = (seconds) => {
+    setMenu(false);
+    ctrl.dispatch({ type: 'timer', on: true, seconds });
+  };
   const moveOn = () => {
     setConfirm(null);
-    if (noAnswers) ctrl.dispatch({ type: 'skipQuestion' });
-    else ctrl.dispatch({ type: 'moveOn' });
+    // Anything typed (even unsubmitted) counts; if nobody typed a thing, pick a new question.
+    const res = ctrl.dispatch({ type: 'moveOn' });
+    if (!res.ok && res.error === 'no-answers') {
+      ctrl.dispatch({ type: 'skipQuestion' });
+      ctrl.toast = null;
+    }
   };
 
   return html`
@@ -321,8 +356,13 @@ export function HostDock({ ctrl, view }) {
       ${(phase === 'answer' || phase === 'vote') &&
       html`
         ${!endsAt
-          ? html`<${Btn} small color="sky" onClick=${() => ctrl.dispatch({ type: 'timer', on: true })} testid="start-timer">${Doodle.clock({ size: 20 })} 45s<span class="long"> timer</span><//>`
-          : expired && missing.length
+          ? html`<div class="timer-menu-wrap">
+              <${Btn} small color="sky" onClick=${() => setMenu(!menu)} testid="start-timer">${Doodle.clock({ size: 20 })} Timer<span class="long">…</span><//>
+              ${menu && html`<div class="timer-menu" role="menu">
+                ${[30, 45, 60].map((s) => html`<button key=${s} role="menuitem" data-testid=${'timer-' + s} onClick=${() => { sfx('tap'); startTimer(s); }}>${s}s</button>`)}
+              </div>`}
+            </div>`
+          : expired && missing.length && !hard
             ? html`<${Btn} small color="tangerine" onClick=${() => setDismissed(null)} testid="move-on-open">⏭ Move on<span class="long">…</span><//>`
             : html`<${Btn} small color="paper" sound="tap" onClick=${() => ctrl.dispatch({ type: 'timer', on: false })}>${Doodle.cross({ size: 18 })} Stop<span class="long"> timer</span><//>`}
         <${Btn} small color="coral" onClick=${() => setConfirm('skip')} testid="skip-question">${Doodle.skip({ size: 20 })} Skip<span class="long"> question</span><//>
@@ -334,11 +374,25 @@ export function HostDock({ ctrl, view }) {
     html`<${Modal} onClose=${() => setDismissed(expiredKey)} title="⏰ Time's up!">
       <p>Still waiting on:</p>
       <div class="row" style="margin-bottom:10px">${missing.map((pid) => html`<span key=${pid} class="chip">${who(pid).avatar} ${who(pid).name}</span>`)}</div>
-      <p class="muted small">${noAnswers ? 'Nobody answered — moving on will skip to a new question.' : phase === 'answer' ? 'Move on and their answers will be left out (they can still vote).' : 'Move on and their votes will be left out.'}</p>
+      <p class="muted small">${phase === 'answer'
+        ? noneSubmitted
+          ? "Whatever they've typed so far will be used. If nobody typed anything, the AI writes a new question."
+          : "Whatever they've typed so far is sent for them (they can still vote)."
+        : 'Move on and their votes will be left out.'}</p>
       <div class="stack" style="gap:10px">
-        <${Btn} block color="tangerine" onClick=${moveOn} testid="confirm-move-on">${noAnswers ? 'Skip to a new question' : `Move on without ${missing.length === 1 ? who(missing[0]).name : 'them'}`}<//>
-        <${Btn} block color="sky" onClick=${() => { ctrl.dispatch({ type: 'timer', on: true }); }}>Give them 45 more seconds<//>
+        <${Btn} block color="tangerine" onClick=${moveOn} testid="confirm-move-on">Move on without ${missing.length === 1 ? who(missing[0]).name : 'them'}<//>
+        <div class="row" style="gap:8px;justify-content:center">
+          ${[30, 45, 60].map((s) => html`<${Btn} key=${s} small color="sky" onClick=${() => startTimer(s)}>+${s}s<//>`)}
+        </div>
         <${Btn} block color="paper" sound="tap" onClick=${() => setDismissed(expiredKey)}>Keep waiting<//>
+      </div>
+    <//>`}
+    ${stalled &&
+    html`<${Modal} onClose=${() => setDismissed('stalled' + g.q.key)} title="😴 Nobody wrote anything">
+      <p>The time limit ran out and not a single answer came in.</p>
+      <div class="stack" style="gap:10px">
+        <${Btn} block color="coral" onClick=${() => { setDismissed('stalled' + g.q.key); ctrl.dispatch({ type: 'skipQuestion' }); }} testid="stalled-skip">New question<//>
+        <${Btn} block color="sky" onClick=${() => { setDismissed('stalled' + g.q.key); startTimer(60); }}>Give everyone 60 more seconds<//>
       </div>
     <//>`}
     ${confirm === 'skip' &&

@@ -18,6 +18,7 @@ const savedPlayer = PlayerController.saved();
 if (role && role.role === 'host' && savedHost && savedHost.room.code === role.code) boot = { mode: 'session', resume: 'host' };
 else if (role && role.role === 'player' && savedPlayer && savedPlayer.code === role.code) boot = { mode: 'session', resume: 'player' };
 else if (/^\d{4}$/.test(params.get('room') || '')) boot = { mode: 'join', code: params.get('room') };
+else if (params.has('check')) boot = { mode: 'netcheck' };
 
 render(html`<${App} boot=${boot} />`, document.getElementById('app'));
 

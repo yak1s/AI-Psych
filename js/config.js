@@ -27,6 +27,16 @@ export const ICE_SERVERS = [
   // { urls: 'turns:your.turn.server:443', username: '...', credential: '...' },
 ];
 
+// RELAY: if a direct WebRTC connection can't be made (VPNs, strict NATs, some
+// mobile carriers), messages flow end-to-end encrypted through public MQTT
+// brokers over secure WebSockets instead. Several are used at once for redundancy.
+export const RELAY_BROKERS = [
+  'wss://broker.emqx.io:8084/mqtt',
+  'wss://broker.hivemq.com:8884/mqtt',
+  'wss://test.mosquitto.org:8081/mqtt',
+  'wss://mqtt.eclipseprojects.io:443/mqtt', // standard HTTPS port: passes even very strict firewalls
+];
+
 export const TIMING = {
   heartbeat: 2000, // ping every 2s
   deadAfter: 9000, // no message for 9s => connection is dead, reconnect
@@ -45,6 +55,8 @@ function readOverrides() {
     if (params.has('signal')) out.signal = params.get('signal');
     if (params.has('ice')) out.ice = params.get('ice');
     if (params.has('debug')) out.debug = Number(params.get('debug')) || 2;
+    if (params.has('relay')) out.relay = params.get('relay');
+    if (params.has('rtc')) out.rtc = params.get('rtc');
     sessionStorage.setItem('aipsych.net', JSON.stringify(out));
   } catch {
     /* storage may be unavailable */
@@ -77,11 +89,28 @@ export function peerOptions() {
   return opts;
 }
 
+/** Relay broker URLs ([] = relay disabled). */
+export function relayBrokers() {
+  if (overrides.relay === 'off') return [];
+  if (overrides.relay) return overrides.relay.split(',').map((s) => s.trim()).filter(Boolean);
+  return RELAY_BROKERS;
+}
+
+/** false when direct WebRTC is switched off (?rtc=off) — used to test the relay path. */
+export function rtcEnabled() {
+  return overrides.rtc !== 'off';
+}
+
+export function relayTopic(...parts) {
+  return ['aipsych', APP_ID, ...parts].join('/');
+}
+
 /** Query string to append to share links so joiners use the same servers. */
 export function netQuery() {
   const q = new URLSearchParams();
   if (overrides.signal) q.set('signal', overrides.signal);
   if (overrides.ice) q.set('ice', overrides.ice);
+  if (overrides.relay) q.set('relay', overrides.relay);
   const s = q.toString();
   return s ? '&' + s : '';
 }

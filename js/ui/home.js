@@ -1,6 +1,6 @@
 import { html, useState, useEffect, useRef } from '../vendor/preact-htm.js';
 import { Btn, Avatar, Modal, Doodle, cx, errorText, useNow } from './common.js';
-import { AVATARS, NAME_MAX, MAX_PLAYERS } from '../game/engine.js';
+import { AVATARS, COLORS, NAME_MAX, MAX_PLAYERS } from '../game/engine.js';
 import { local, KEYS } from '../storage.js';
 import { sfx } from './audio.js';
 
@@ -30,7 +30,7 @@ export function HowToPlay({ onClose }) {
   <//>`;
 }
 
-export function Home({ onHost, onJoin, resumeHost, resumePlayer, onResumeHost, onResumePlayer, onForgetHost, onForgetPlayer }) {
+export function Home({ onHost, onJoin, onCheck, resumeHost, resumePlayer, onResumeHost, onResumePlayer, onForgetHost, onForgetPlayer }) {
   const [rules, setRules] = useState(false);
   return html`<div class="screen enter">
     <div class="stack" style="align-items:center;gap:22px">
@@ -54,7 +54,10 @@ export function Home({ onHost, onJoin, resumeHost, resumePlayer, onResumeHost, o
         <${Btn} big block color="coral" onClick=${onHost} testid="host-btn">${Doodle.crown({ size: 30 })} Host a game<//>
         <${Btn} big block color="sky" onClick=${onJoin} testid="join-btn">${Doodle.door({ size: 30 })} Join with a code<//>
       </div>
-      <button class="link-btn" onClick=${() => { sfx('tap'); setRules(true); }}>How do I play?</button>
+      <div class="row center" style="gap:22px">
+        <button class="link-btn" onClick=${() => { sfx('tap'); setRules(true); }}>How do I play?</button>
+        <button class="link-btn" onClick=${() => { sfx('tap'); onCheck(); }} data-testid="netcheck-btn">📡 Test my connection</button>
+      </div>
       <p class="footer-note">No accounts · no app · 2–${MAX_PLAYERS} players · works across any network</p>
     </div>
     ${rules && html`<${HowToPlay} onClose=${() => setRules(false)} />`}
@@ -62,13 +65,26 @@ export function Home({ onHost, onJoin, resumeHost, resumePlayer, onResumeHost, o
 }
 
 export function AvatarPicker({ value, onChange }) {
-  return html`<div class="avatar-pick" role="radiogroup" aria-label="Pick your avatar">
-    ${AVATARS.map(
-      (a, i) => html`<button key=${a} role="radio" aria-checked=${value === a} class=${value === a ? 'on' : ''}
-        onClick=${() => { sfx('pop'); onChange(a); }}>
-        <${Avatar} p=${{ avatar: a, color: ['coral', 'sky', 'sun', 'mint', 'grape', 'bubblegum', 'tangerine', 'leaf'][i % 8], name: a }} />
-      </button>`,
-    )}
+  const ref = useRef();
+  const surprise = () => {
+    const a = AVATARS[Math.floor(Math.random() * AVATARS.length)];
+    sfx('boing');
+    onChange(a);
+    setTimeout(() => {
+      const el = ref.current && ref.current.querySelector('button.on');
+      if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }, 30);
+  };
+  return html`<div class="stack" style="gap:8px">
+    <div class="avatar-pick" role="radiogroup" aria-label="Pick your avatar" ref=${ref}>
+      ${AVATARS.map(
+        (a, i) => html`<button key=${a} role="radio" aria-checked=${value === a} class=${value === a ? 'on' : ''}
+          onClick=${() => { sfx('pop'); onChange(a); }}>
+          <${Avatar} p=${{ avatar: a, color: COLORS[(i * 5) % COLORS.length], name: a }} />
+        </button>`,
+      )}
+    </div>
+    <button class="link-btn" style="align-self:center" onClick=${surprise}>🎲 surprise me</button>
   </div>`;
 }
 

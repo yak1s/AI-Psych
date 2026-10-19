@@ -32,13 +32,13 @@ function playRound(t, answerFor = (n) => `answer of ${n}`) {
   assert.equal(g.phase, 'results');
 }
 
-test('names must be unique and room caps at 8', () => {
+test('names must be unique and room caps at 16', () => {
   const t = setup();
   assert.equal(E.addPlayer(t.room, { name: 'ann' }).error, 'name-taken');
-  for (let i = 0; i < 4; i++) assert.ok(E.addPlayer(t.room, { name: 'P' + i }).ok);
+  for (let i = 0; i < 12; i++) assert.ok(E.addPlayer(t.room, { name: 'P' + i }).ok);
   assert.equal(E.addPlayer(t.room, { name: 'Late' }).error, 'room-full');
   const colors = new Set(t.room.players.map((p) => p.color));
-  assert.equal(colors.size, 8, 'every player gets a distinct color');
+  assert.equal(colors.size, 16, 'every player gets a distinct color');
 });
 
 test('full game: scoring gives 2 points for the subject vote, 1 otherwise', () => {
@@ -213,8 +213,9 @@ test('level progression is monotonic for longer games', () => {
   }
   assert.equal(levels.length, 15);
   for (let i = 1; i < levels.length; i++) assert.ok(levels[i] >= levels[i - 1], levels.join(','));
-  assert.equal(levels[0], 1);
-  assert.equal(levels[14], 5);
+  assert.deepEqual(levels, [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5], 'three questions per level');
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => E.targetLevel([1, 2, 3, 4, 5], i, 10)), [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
+  assert.deepEqual([0, 1, 2].map((i) => E.targetLevel([1, 2, 3, 4, 5], i, 3)), [1, 3, 5], 'short games still end at the top');
 });
 
 test('subject may be excluded from answering', () => {
@@ -257,4 +258,109 @@ test('parse TXT and CSV decks', () => {
   const tpl = parseDeck(JSON.stringify(TEMPLATE_DECK), 't.json');
   assert.ok(tpl.ok);
   assert.equal(tpl.deck.questions.length, TEMPLATE_DECK.questions.length);
+});
+
+test('a deck can be uploaded before anyone joins', () => {
+  const room = E.createRoom({ code: '1234', host: { name: 'Solo' } });
+  const deck = parseDeck(JSON.stringify(TEMPLATE_DECK), 't.json').deck;
+  assert.ok(E.apply(room, room.hostPid, { type: 'deck', deck }, { now: 1, online: new Set() }).ok);
+});
+
+test('time running out submits what was typed; an unsent edit keeps the original', () => {
+  const t = setup(['Host', 'Ann', 'Bob', 'Cid']);
+  t.act('Host', { type: 'start' });
+  const g = t.room.game;
+  t.act('Host', { type: 'answer', text: 'host original', qkey: g.q.key });
+  E.setDraft(t.room, t.ids.Host, 'host edited but never sent', g.q.key); // editing after submitting
+  E.setDraft(t.room, t.ids.Ann, 'ann typed this', g.q.key);
+  E.setDraft(t.room, t.ids.Bob, '   ', g.q.key); // blank drafts don't count
+  assert.ok(t.act('Host', { type: 'moveOn' }).ok);
+  const texts = Object.fromEntries(g.options.map((o) => [o.pid, o.text]));
+  assert.equal(texts[t.ids.Host], 'host original');
+  assert.equal(texts[t.ids.Ann], 'ann typed this');
+  assert.equal(texts[t.ids.Bob], undefined);
+  assert.equal(texts[t.ids.Cid], undefined);
+});
+
+test('hard time limits auto-advance answer and vote phases', () => {
+  const t = setup();
+  t.act('Host', { type: 'settings', settings: { timeLimit: 'normal' } });
+  t.act('Host', { type: 'start' });
+  const g = t.room.game;
+  assert.ok(g.timer.hard);
+  assert.equal(g.timer.total, 90000);
+  assert.equal(E.tick(t.room, { ...t.ctx, now: g.timer.endsAt }), false, 'grace period for last keystrokes');
+  E.setDraft(t.room, t.ids.Ann, 'half-finished thou', g.q.key);
+  t.act('Bob', { type: 'answer', text: 'bob', qkey: g.q.key });
+  assert.ok(E.tick(t.room, { ...t.ctx, now: g.timer.endsAt + 2000 }));
+  assert.equal(g.phase, 'vote');
+  assert.equal(g.options.length, 2);
+  assert.equal(g.timer.total, 45000);
+  assert.ok(E.tick(t.room, { ...t.ctx, now: g.timer.endsAt + 2000 }));
+  assert.equal(g.phase, 'results');
+});
+
+test('hard limit with nobody answering waits for the host instead of burning questions', () => {
+  const t = setup();
+  t.act('Host', { type: 'settings', settings: { timeLimit: 'fast' } });
+  t.act('Host', { type: 'start' });
+  const g = t.room.game;
+  const key = g.q.key;
+  assert.ok(E.tick(t.room, { ...t.ctx, now: g.timer.endsAt + 2000 }));
+  assert.equal(g.phase, 'answer');
+  assert.equal(g.q.key, key);
+  assert.equal(g.timer, null);
+  assert.ok(E.viewFor(t.room, t.ids.Ann, t.ctx).game.stalled);
+});
+
+test('host timer lengths 30/45/60', () => {
+  const t = setup();
+  t.act('Host', { type: 'start' });
+  t.act('Host', { type: 'timer', on: true, seconds: 30 });
+  assert.equal(t.room.game.timer.total, 30000);
+  t.act('Host', { type: 'timer', on: true, seconds: 60 });
+  assert.equal(t.room.game.timer.endsAt - t.ctx.now, 60000);
+});
+
+test('last round hides running totals until the podium', () => {
+  const t = setup();
+  t.room.settings.rounds = 5;
+  t.act('Host', { type: 'start' });
+  const g = t.room.game;
+  for (let r = 0; r < 4; r++) {
+    playRound(t);
+    assert.ok(E.viewFor(t.room, t.ids.Ann, t.ctx).game.result.after);
+    t.act('Host', { type: 'next' });
+  }
+  playRound(t);
+  const v = E.viewFor(t.room, t.ids.Ann, t.ctx).game;
+  assert.ok(v.isLast);
+  assert.equal(v.scores, undefined);
+  assert.equal(v.result.after, null);
+  assert.ok(v.result.entries.length, 'round answers are still revealed');
+  t.act('Host', { type: 'next' });
+  assert.ok(E.viewFor(t.room, t.ids.Ann, t.ctx).game.scores, 'podium shows totals');
+});
+
+test('awards rotate between games', () => {
+  const t = setup(['Host', 'Ann', 'Bob', 'Cid', 'Dee']);
+  t.room.settings.rounds = 10;
+  const seen = [];
+  for (let game = 0; game < 4; game++) {
+    t.act('Host', { type: game ? 'playAgain' : 'start' });
+    const g = t.room.game;
+    while (g.phase !== 'final') {
+      playRound(t, (n) => n.repeat(1 + Math.floor(Math.random() * 6)));
+      t.act('Host', { type: 'next' });
+    }
+    assert.ok(g.final.awards.length >= 2 && g.final.awards.length <= 4, 'a handful of awards');
+    seen.push(...g.final.awards.map((a) => a.id));
+  }
+  assert.ok(new Set(seen).size >= 7, 'many different awards across games: ' + [...new Set(seen)].join(','));
+});
+
+test('built-in questions are flagged so the AI can "struggle"', () => {
+  const t = setup();
+  t.act('Host', { type: 'start' });
+  assert.equal(E.viewFor(t.room, t.ids.Ann, t.ctx).game.q.generic, true);
 });

@@ -6,16 +6,32 @@ import { uid, shuffle, seeded, pick, random, normName, cleanText } from './util.
 import { renderSegments, segmentsToText } from './deck.js';
 import { STARTER } from './starter.js';
 
-export const MAX_PLAYERS = 8;
+export const MAX_PLAYERS = 16;
 export const MIN_PLAYERS = 2;
 export const TIMER_MS = 45000;
+export const HOST_TIMER_CHOICES = [30, 45, 60];
+/** Hard time limits (seconds): auto-submit what's typed and move on. */
+export const TIME_LIMITS = {
+  off: null,
+  chill: { answer: 120, vote: 60, label: 'Chill' },
+  normal: { answer: 90, vote: 45, label: 'Normal' },
+  fast: { answer: 60, vote: 30, label: 'Fast' },
+};
+const INTRO_MS = 4500; // the "AI is writing" intro before anyone can type
+const DEAL_MS = 650; // per answer card dealt on the voting screen
+const GRACE_MS = 1500; // let the last keystrokes arrive before a hard timer fires
 export const ROUND_CHOICES = [5, 10, 15];
 export const ANSWER_MAX = 120;
 export const NAME_MAX = 14;
 export const PROTOCOL = 1;
 
-export const AVATARS = ['🦄', '🐸', '🦖', '🐙', '🥑', '🌮', '👽', '🤡', '🐔', '🦝', '🐷', '🦊', '🐼', '🐵', '🦉', '🐢', '🍕', '🧁', '🌵', '👻', '🤖', '🦩', '🐳', '🍩'];
-export const COLORS = ['coral', 'sky', 'sun', 'mint', 'grape', 'bubblegum', 'tangerine', 'leaf'];
+export const AVATARS = [
+  '🦄', '🐸', '🦖', '🐙', '🥑', '🌮', '👽', '🤡', '🐔', '🦝', '🐷', '🦊', '🐼', '🐵', '🦉', '🐢',
+  '🍕', '🧁', '🌵', '👻', '🤖', '🦩', '🐳', '🍩', '🐧', '🦁', '🐯', '🐨', '🐰', '🦔', '🦥', '🦦',
+  '🐌', '🦋', '🐞', '🦈', '🐬', '🦜', '🦚', '🐲', '🦕', '🍉', '🍍', '🥨', '🧀', '🍪', '🍿', '🥐',
+  '🎩', '👑', '🕶️', '🎸', '🎨', '📸', '🎮', '🚀', '⚽', '🎈', '🌈', '🌻', '🍄', '⭐', '🔮', '🧸',
+];
+export const COLORS = ['coral', 'sky', 'sun', 'mint', 'grape', 'bubblegum', 'tangerine', 'leaf', 'ocean', 'rose', 'lime', 'indigo', 'peach', 'aqua', 'lilac', 'gold'];
 
 // ---------------------------------------------------------------------------
 // Rooms & players
@@ -31,7 +47,8 @@ export function createRoom({ code, host }) {
     deck: null,
     assign: {},
     used: [],
-    settings: { rounds: 10, subjectAnswers: true, showMeter: true, fillStarter: true },
+    settings: { rounds: 10, subjectAnswers: true, showMeter: true, fillStarter: true, timeLimit: 'off' },
+    awardsGiven: [],
     gamesPlayed: 0,
     game: null,
     acts: {},
@@ -141,10 +158,12 @@ export function questionPool(room, activeIds = activePlayers(room).map((p) => p.
   return { deck, starter, primary, backup, total: primary.length + backup.length };
 }
 
+/** Even steps from the lowest level to the highest (e.g. 15 questions, 5 levels: 3 each). */
 export function targetLevel(levels, idx, n) {
   if (!levels.length) return 1;
   if (n <= 1 || levels.length === 1) return levels[0];
-  return levels[Math.round((idx * (levels.length - 1)) / (n - 1))];
+  if (levels.length > n) return levels[Math.round((idx * (levels.length - 1)) / (n - 1))];
+  return levels[Math.min(levels.length - 1, Math.floor((idx * levels.length) / n))];
 }
 
 /** Resolve which players fill a question, preferring people asked about least. */
@@ -212,6 +231,14 @@ export function startGame(room, ctx) {
   return { ok: true };
 }
 
+function limits(room) {
+  return TIME_LIMITS[room.settings.timeLimit] || null;
+}
+
+function hardTimer(room, phase, ms, ctx, extra = 0) {
+  return { endsAt: ctx.now + ms * 1000 + extra, total: ms * 1000, start: ctx.now + extra, phase, hard: true };
+}
+
 function beginQuestion(room, ctx) {
   const g = room.game;
   const activeIds = activePlayers(room).map((p) => p.id);
@@ -237,25 +264,40 @@ function beginQuestion(room, ctx) {
     participants: activeIds,
     answerers,
     startedAt: ctx.now,
+    generic: q.id[0] === 's',
   };
   g.phase = 'answer';
   g.answers = {};
+  g.drafts = {};
   g.options = null;
   g.votes = {};
   g.voters = [];
   g.ready = [];
-  g.timer = null;
+  g.stalled = false;
+  const lim = limits(room);
+  g.timer = lim ? hardTimer(room, 'answer', lim.answer, ctx, INTRO_MS) : null;
   g.result = null;
+}
+
+/** Whatever a player had typed (but not submitted) counts when time runs out. */
+function collectDrafts(room, ctx) {
+  const g = room.game;
+  for (const pid of g.q.answerers) {
+    const d = g.drafts && g.drafts[pid];
+    if (!g.answers[pid] && d && isActive(room, pid)) g.answers[pid] = { text: d, at: ctx.now, auto: true };
+  }
 }
 
 function beginVote(room, ctx) {
   const g = room.game;
+  collectDrafts(room, ctx);
   const answered = g.q.answerers.filter((p) => isActive(room, p) && g.answers[p]);
   if (!answered.length) return beginQuestion(room, ctx);
   g.options = shuffle(answered.map((pid) => ({ oid: uid(6), pid, text: g.answers[pid].text })));
   g.voters = g.q.participants.filter((p) => isActive(room, p) && g.options.some((o) => o.pid !== p));
   g.votes = {};
-  g.timer = null;
+  const lim = limits(room);
+  g.timer = lim ? hardTimer(room, 'vote', lim.vote, ctx, 600 + g.options.length * DEAL_MS) : null;
   g.phase = 'vote';
   g.voteStartedAt = ctx.now;
   if (!g.voters.length) beginResults(room, ctx);
@@ -264,12 +306,14 @@ function beginVote(room, ctx) {
 function beginResults(room, ctx) {
   const g = room.game;
   const entries = g.options.map((o) => ({ oid: o.oid, pid: o.pid, text: o.text, votes: [], points: 0 }));
+  const votePairs = [];
   for (const [voter, oid] of Object.entries(g.votes)) {
     const e = entries.find((x) => x.oid === oid);
     if (!e) continue;
     const pts = g.q.about.includes(voter) ? 2 : 1;
     e.votes.push({ pid: voter, pts });
     e.points += pts;
+    votePairs.push([voter, e.pid]);
   }
   const before = { ...g.scores };
   for (const e of entries) g.scores[e.pid] = (g.scores[e.pid] || 0) + e.points;
@@ -280,13 +324,21 @@ function beginResults(room, ctx) {
     missingAnswers: g.q.answerers.filter((p) => isActive(room, p) && !g.answers[p]),
     missingVotes: g.voters.filter((p) => isActive(room, p) && !g.votes[p]),
   };
+  const order = Object.entries(g.answers).filter(([, a]) => !a.auto).sort((a, b) => a[1].at - b[1].at).map(([pid]) => pid);
   g.history.push({
     idx: g.idx,
     level: g.q.level,
     about: g.q.about,
+    answerers: g.q.answerers.slice(),
+    votes: votePairs,
+    first: order[0] || null,
+    last: order.length > 2 ? order[order.length - 1] : null,
+    rank: rankOf(g.scores),
     entries: entries.map((e) => ({
       pid: e.pid,
       points: e.points,
+      len: e.text.length,
+      auto: !!(g.answers[e.pid] && g.answers[e.pid].auto),
       judge: e.votes.filter((v) => v.pts === 2).length,
       crowd: e.votes.filter((v) => v.pts === 1).length,
     })),
@@ -294,6 +346,13 @@ function beginResults(room, ctx) {
   g.phase = 'results';
   g.ready = [];
   g.timer = null;
+}
+
+function rankOf(scores) {
+  const ids = Object.keys(scores).sort((a, b) => scores[b] - scores[a]);
+  const out = {};
+  ids.forEach((pid, i) => (out[pid] = i > 0 && scores[pid] === scores[ids[i - 1]] ? out[ids[i - 1]] : i + 1));
+  return out;
 }
 
 function advance(room, ctx) {
@@ -316,42 +375,81 @@ function finishGame(room, ctx, reason) {
     r.rank = rank;
   });
   g.final = { ranking: sorted, awards: computeAwards(room, g, sorted), reason, rounds: g.history.length };
+  // Room trophy cabinet: wins carry over from game to game.
+  room.wins = room.wins || {};
+  if (g.history.length) for (const r of sorted) if (r.rank === 1 && r.score > 0) room.wins[r.pid] = (room.wins[r.pid] || 0) + 1;
 }
 
+const AWARD_COUNT = 4;
+
 function computeAwards(room, g, ranking) {
+  const activeIds = new Set(ranking.map((r) => r.pid));
+  const H = g.history;
+  const add = (t, pid, v = 1) => activeIds.has(pid) && (t[pid] = (t[pid] || 0) + v);
   const tally = (fn) => {
     const t = {};
-    for (const h of g.history) for (const e of h.entries) t[e.pid] = (t[e.pid] || 0) + fn(e, h);
+    for (const h of H) for (const e of h.entries) add(t, e.pid, fn(e, h));
     return t;
   };
-  const featured = {};
-  for (const h of g.history) for (const pid of h.about) featured[pid] = (featured[pid] || 0) + 1;
-  const zeroRounds = {};
-  for (const h of g.history) {
-    for (const pid of room.players.map((p) => p.id)) {
-      const e = h.entries.find((x) => x.pid === pid);
-      if (!e || e.points === 0) zeroRounds[pid] = (zeroRounds[pid] || 0) + 1;
-    }
-  }
+  const per = (fn) => {
+    const t = {};
+    for (const h of H) fn(h, t);
+    return t;
+  };
+  const avg = (fn, min = 2) => {
+    const sum = {};
+    const n = {};
+    for (const h of H) for (const e of h.entries) if (!e.auto) { add(sum, e.pid, fn(e)); add(n, e.pid, 1); }
+    const t = {};
+    for (const pid of Object.keys(sum)) if (n[pid] >= min) t[pid] = Math.round(sum[pid] / n[pid]);
+    return t;
+  };
+  const shortest = (() => {
+    const a = avg((e) => e.len);
+    const t = {};
+    for (const [pid, v] of Object.entries(a)) t[pid] = 1000 - v; // invert so "most" wins
+    return { t, show: (pid) => `${1000 - t[pid]} letters per answer, on average` };
+  })();
+  const midRank = H.length >= 4 ? H[Math.floor(H.length / 2) - 1].rank : null;
+  const finalRank = Object.fromEntries(ranking.map((r) => [r.pid, r.rank]));
+
   const candidates = [
-    { id: 'judge', emoji: '⚖️', title: "The Judge's Pet", t: tally((e) => e.judge), unit: 'double-point votes' },
-    { id: 'crowd', emoji: '📣', title: 'Crowd Pleaser', t: tally((e) => e.crowd), unit: 'votes from the crowd' },
-    { id: 'famous', emoji: '🔎', title: 'Most Investigated', t: featured, unit: 'questions about them' },
-    { id: 'ghost', emoji: '👻', title: 'The Mysterious Ghost', t: zeroRounds, unit: 'rounds with zero points' },
-    { id: 'hot', emoji: '🔥', title: 'Hottest Round', t: tally((e) => (e.points >= 3 ? 1 : 0)), unit: 'rounds with 3+ points' },
+    { id: 'judge', emoji: '⚖️', title: "The Judge's Pet", t: tally((e) => e.judge), detail: (v) => `${v} double-point votes` },
+    { id: 'crowd', emoji: '📣', title: 'Crowd Pleaser', t: tally((e) => e.crowd), detail: (v) => `${v} votes from the crowd` },
+    { id: 'famous', emoji: '🔎', title: 'Most Investigated', t: per((h, t) => h.about.forEach((p) => add(t, p))), detail: (v) => `the AI asked about them ${v} times` },
+    { id: 'ghost', emoji: '👻', title: 'The Mysterious Ghost', t: per((h, t) => h.answerers.forEach((p) => { const e = h.entries.find((x) => x.pid === p); if (!e || !e.points) add(t, p); })), detail: (v) => `${v} rounds without a single point`, min: 2 },
+    { id: 'hot', emoji: '🔥', title: 'On Fire', t: tally((e) => (e.points >= 3 ? 1 : 0)), detail: (v) => `${v} rounds with 3+ points` },
+    { id: 'sharp', emoji: '🎯', title: 'The Sharpshooter', t: per((h, t) => { const m = Math.max(0, ...h.entries.map((e) => e.points)); if (m) h.entries.filter((e) => e.points === m).forEach((e) => add(t, e.pid)); }), detail: (v) => `won ${v} rounds outright` },
+    { id: 'speed', emoji: '⚡', title: 'Speed Demon', t: per((h, t) => h.first && add(t, h.first)), detail: (v) => `first to answer ${v} times`, min: 2 },
+    { id: 'late', emoji: '🐢', title: 'Fashionably Late', t: per((h, t) => h.last && add(t, h.last)), detail: (v) => `last to answer ${v} times`, min: 2 },
+    { id: 'novel', emoji: '📜', title: 'The Novelist', t: avg((e) => e.len), detail: (v) => `${v} letters per answer, on average` },
+    { id: 'short', emoji: '🤏', title: 'Short & Sweet', t: shortest.t, detail: (v, pid) => shortest.show(pid) },
+    { id: 'king', emoji: '🗳️', title: 'The Kingmaker', t: per((h, t) => { const m = Math.max(0, ...h.entries.map((e) => e.points)); const top = new Set(h.entries.filter((e) => e.points === m && m).map((e) => e.pid)); h.votes.forEach(([v, a]) => top.has(a) && add(t, v)); }), detail: (v) => `voted for the winning answer ${v} times`, min: 2 },
+    { id: 'lonely', emoji: '🦄', title: 'One of a Kind', t: per((h, t) => h.votes.forEach(([v, a]) => { const e = h.entries.find((x) => x.pid === a); if (e && e.judge + e.crowd === 1) add(t, v); })), detail: (v) => `${v} votes nobody else agreed with`, min: 2 },
+    { id: 'magnet', emoji: '🧲', title: 'Vote Magnet', t: per((h, t) => h.entries.forEach((e) => { const n = e.judge + e.crowd; if (activeIds.has(e.pid) && n > (t[e.pid] || 0)) t[e.pid] = n; })), detail: (v) => `${v} votes in a single round`, min: 3 },
+    { id: 'fans', emoji: '🌍', title: 'Fan Club President', t: per((h, t) => { t.__s ||= {}; h.votes.forEach(([v, a]) => { (t.__s[a] ||= new Set()).add(v); }); for (const [a, set] of Object.entries(t.__s)) if (activeIds.has(a)) t[a] = set.size; }), detail: (v) => `got votes from ${v} different players`, min: 3 },
+    { id: 'sleepy', emoji: '😴', title: 'The Sleepy Scribe', t: per((h, t) => h.answerers.forEach((p) => { const e = h.entries.find((x) => x.pid === p); if (!e || e.auto) add(t, p); })), detail: (v) => `${v} answers the clock had to grab`, min: 2 },
+    { id: 'comeback', emoji: '📈', title: 'The Comeback Kid', t: midRank ? Object.fromEntries(Object.keys(finalRank).filter((p) => midRank[p]).map((p) => [p, midRank[p] - finalRank[p]])) : {}, detail: (v) => `climbed ${v} places in the second half`, min: 2 },
+    { id: 'spoon', emoji: '🥄', title: 'The Wooden Spoon', t: ranking.length > 2 && ranking[ranking.length - 1].rank !== 1 ? { [ranking[ranking.length - 1].pid]: 1 } : {}, detail: () => 'better luck next time!' },
   ];
-  const awards = [];
-  const activeIds = new Set(ranking.map((r) => r.pid));
+  delete candidates.find((c) => c.id === 'fans').t.__s;
+
+  const eligible = [];
   for (const c of candidates) {
-    const rows = Object.entries(c.t).filter(([pid, v]) => activeIds.has(pid) && v > 0).sort((a, b) => b[1] - a[1]);
+    const rows = Object.entries(c.t).filter(([pid, v]) => activeIds.has(pid) && v >= (c.min || 1)).sort((a, b) => b[1] - a[1]);
     if (!rows.length || (rows[1] && rows[1][1] === rows[0][1])) continue;
-    awards.push({ id: c.id, emoji: c.emoji, title: c.title, pid: rows[0][0], detail: `${rows[0][1]} ${c.unit}` });
+    eligible.push({ id: c.id, emoji: c.emoji, title: c.title, pid: rows[0][0], detail: c.detail(rows[0][1], rows[0][0]) });
   }
-  if (ranking.length > 2) {
-    const last = ranking[ranking.length - 1];
-    if (last.rank !== 1) awards.push({ id: 'spoon', emoji: '🥄', title: 'The Wooden Spoon', pid: last.pid, detail: 'Better luck next time!' });
-  }
-  return awards.slice(0, 5);
+  // Rotate: prefer awards this room hasn't seen lately, and spread them across different people.
+  const recent = new Set((room.awardsGiven || []).slice(-8));
+  const rand = seeded(g.id);
+  const sorted = shuffle(eligible, rand).sort((a, b) => recent.has(a.id) - recent.has(b.id));
+  const picked = [];
+  const people = new Set();
+  for (const a of sorted) if (picked.length < AWARD_COUNT && !people.has(a.pid)) { picked.push(a); people.add(a.pid); }
+  for (const a of sorted) if (picked.length < AWARD_COUNT && !picked.includes(a)) picked.push(a);
+  room.awardsGiven = [...(room.awardsGiven || []), ...picked.map((a) => a.id)].slice(-30);
+  return picked;
 }
 
 /** Re-evaluate phase completion after presence/roster changes. */
@@ -368,6 +466,33 @@ export function recheck(room, ctx) {
     const need = activePlayers(room).filter((p) => p.id === room.hostPid || !ctx.online || ctx.online.has(p.id));
     if (need.every((p) => g.ready.includes(p.id))) advance(room, ctx);
   }
+}
+
+/** Remember what a player is typing, so a time-out can submit it. */
+export function setDraft(room, pid, text, qkey) {
+  const g = room.game;
+  if (!g || g.phase !== 'answer' || (qkey && qkey !== g.q.key) || !g.q.answerers.includes(pid)) return false;
+  g.drafts = g.drafts || {};
+  g.drafts[pid] = cleanText(text, ANSWER_MAX);
+  return true;
+}
+
+/** Hard time limits: called by the host every half second. Returns true if anything changed. */
+export function tick(room, ctx) {
+  const g = room.game;
+  if (!g || !g.timer || !g.timer.hard || ctx.now < g.timer.endsAt + GRACE_MS) return false;
+  if (g.phase === 'answer') {
+    collectDrafts(room, ctx);
+    if (Object.keys(g.answers).length) beginVote(room, ctx);
+    else {
+      // Nobody wrote anything at all: don't burn questions — wait for the host.
+      g.timer = null;
+      g.stalled = true;
+    }
+  } else if (g.phase === 'vote') beginResults(room, ctx);
+  else return false;
+  room.seq++;
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -399,6 +524,7 @@ function applyInner(room, pid, action, ctx) {
       if (!g.q.answerers.includes(pid)) return { ok: false, error: 'not-answering' };
       const text = cleanText(action.text, ANSWER_MAX);
       if (!text) return { ok: false, error: 'empty' };
+      if (g.answers[pid] && g.answers[pid].text === text) return { ok: true };
       g.answers[pid] = { text, at: ctx.now };
       recheck(room, ctx);
       return { ok: true };
@@ -431,11 +557,11 @@ function applyInner(room, pid, action, ctx) {
       const a = action.settings || {};
       if (ROUND_CHOICES.includes(a.rounds)) s.rounds = a.rounds;
       for (const k of ['subjectAnswers', 'showMeter', 'fillStarter']) if (typeof a[k] === 'boolean') s[k] = a[k];
+      if (a.timeLimit in TIME_LIMITS) s.timeLimit = a.timeLimit;
       return { ok: true };
     }
     case 'deck': {
       if (!inLobby) return { ok: false, error: 'in-game' };
-      if (activePlayers(room).length < 2) return { ok: false, error: 'need-players' };
       const d = action.deck;
       if (!d || !Array.isArray(d.questions) || !d.questions.length) return { ok: false, error: 'bad-deck' };
       room.deck = d;
@@ -470,12 +596,14 @@ function applyInner(room, pid, action, ctx) {
       return startGame(room, ctx);
     case 'timer': {
       if (!g || (g.phase !== 'answer' && g.phase !== 'vote')) return { ok: false, error: 'stale' };
-      g.timer = action.on ? { endsAt: ctx.now + TIMER_MS, phase: g.phase, key: g.q.key } : null;
+      const secs = HOST_TIMER_CHOICES.includes(action.seconds) ? action.seconds : TIMER_MS / 1000;
+      g.timer = action.on ? { endsAt: ctx.now + secs * 1000, total: secs * 1000, start: ctx.now, phase: g.phase } : null;
       return { ok: true };
     }
     case 'moveOn': {
       if (!g) return { ok: false, error: 'stale' };
       if (g.phase === 'answer') {
+        collectDrafts(room, ctx);
         if (!Object.keys(g.answers).length) return { ok: false, error: 'no-answers' };
         beginVote(room, ctx);
       } else if (g.phase === 'vote') beginResults(room, ctx);
@@ -518,7 +646,8 @@ export function seenAction(room, pid, id) {
 // Views (what each device is allowed to see)
 
 function publicPlayer(p, ctx) {
-  return { id: p.id, name: p.name, avatar: p.avatar, color: p.color, isHost: !!p.isHost, online: p.isHost || !ctx.online || ctx.online.has(p.id) };
+  const net = p.isHost ? 'host' : (ctx.transport && ctx.transport[p.id]) || undefined;
+  return { id: p.id, name: p.name, avatar: p.avatar, color: p.color, isHost: !!p.isHost, online: p.isHost || !ctx.online || ctx.online.has(p.id), net };
 }
 
 export function viewFor(room, pid, ctx) {
@@ -530,8 +659,9 @@ export function viewFor(room, pid, ctx) {
     me: pid,
     hostPid: room.hostPid,
     players: activePlayers(room).map((p) => publicPlayer(p, ctx)),
-    settings: { rounds: room.settings.rounds, showMeter: room.settings.showMeter, subjectAnswers: room.settings.subjectAnswers },
+    settings: { rounds: room.settings.rounds, showMeter: room.settings.showMeter, subjectAnswers: room.settings.subjectAnswers, timeLimit: room.settings.timeLimit || 'off' },
     gamesPlayed: room.gamesPlayed,
+    wins: room.wins || {},
     game: null,
   };
   if (!g) return view;
@@ -541,18 +671,21 @@ export function viewFor(room, pid, ctx) {
     n: g.n,
     idx: g.idx,
     phase: g.phase,
-    scores: g.scores,
     levels: g.levels,
+    isLast: g.idx + 1 >= g.n,
   };
+  // Totals stay secret during the last round — the podium reveals them.
+  if (!(gv.isLast && g.phase !== 'final')) gv.scores = g.scores;
   if (g.q) {
-    gv.q = { key: g.q.key, level: g.q.level, segments: g.q.segments, about: g.q.about, participants: g.q.participants, answerers: g.q.answerers };
+    gv.q = { key: g.q.key, level: g.q.level, segments: g.q.segments, about: g.q.about, participants: g.q.participants, answerers: g.q.answerers, generic: !!g.q.generic };
   }
   if (g.timer && (g.phase === 'answer' || g.phase === 'vote')) {
-    gv.timer = { remaining: g.timer.endsAt - ctx.now, total: TIMER_MS };
+    gv.timer = { remaining: g.timer.endsAt - ctx.now, total: g.timer.total || TIMER_MS, hard: !!g.timer.hard, startsIn: Math.max(0, (g.timer.start || 0) - ctx.now) };
   }
   if (g.phase === 'answer') {
     gv.answered = Object.keys(g.answers).filter((p) => g.q.answerers.includes(p));
     gv.myAnswer = g.answers[pid] ? g.answers[pid].text : null;
+    gv.stalled = !!g.stalled;
   }
   if (g.phase === 'vote') {
     const rand = seeded(g.q.key + ':' + pid);
@@ -562,7 +695,8 @@ export function viewFor(room, pid, ctx) {
     gv.myVote = g.votes[pid] || null;
   }
   if (g.phase === 'results') {
-    gv.result = g.result;
+    gv.result = gv.isLast ? { ...g.result, before: null, after: null } : g.result;
+    gv.autoAnswered = g.q.answerers.filter((p) => g.answers[p] && g.answers[p].auto);
     gv.ready = g.ready;
   }
   if (g.phase === 'final') {

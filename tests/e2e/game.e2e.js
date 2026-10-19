@@ -15,13 +15,13 @@ after(async () => {
 
 test('a full game with a secret deck, a player refresh and a host refresh', { timeout: 240000 }, async () => {
   const { host, code } = await hostRoom(world, 'Sarah', { width: 1100, height: 900 });
-  assert.equal(await host.getByTestId('deck-input').isDisabled(), true, 'deck upload waits for a player');
+  // The deck can go in before anyone joins; names match up as people arrive.
+  await host.getByTestId('deck-input').setInputFiles(new URL('../../decks/template.json', import.meta.url).pathname);
+  await host.getByTestId('assign-mom').waitFor();
   const mommy = await joinRoom(world, code, 'Mommy');
   const daddy = await joinRoom(world, code, 'Daddy');
   const all = [host, mommy, daddy];
 
-  await host.getByTestId('deck-input').setInputFiles(new URL('../../decks/template.json', import.meta.url).pathname);
-  await host.getByTestId('assign-mom').waitFor();
   await until(() => state(host, (c) => c.room.assign.mom && c.room.assign.dad && c.room.assign.sarah));
   assert.equal(await state(host, (c) => c.room.assign['grandpa joe'] || null), null, 'Grandpa Joe did not join');
 
@@ -141,6 +141,8 @@ test('host timer needs confirmation, skip question, kick and late join', { timeo
   // Timer: when it runs out the host must confirm moving on without Bob.
   await answerAll([host, ann]);
   await tap(host, 'start-timer');
+  await tap(host, 'timer-30');
+  assert.equal(await state(host, (c) => c.room.game.timer.total), 30000);
   await host.evaluate(() => {
     const c = window.__aipsych.current;
     c.room.game.timer.endsAt = Date.now() + 2500; // fast-forward the 45s for the test
@@ -163,4 +165,75 @@ test('host timer needs confirmation, skip question, kick and late join', { timeo
   await host.evaluate((pid) => window.__aipsych.current.dispatch({ type: 'kick', pid }), bobId);
   await bob.getByText('You were removed from the room').waitFor({ timeout: 10000 });
   for (const p of [host, ann, bob, cid]) await p.context().close();
+});
+
+test('players whose network blocks WebRTC (VPN, strict NAT) play through the encrypted relay', { timeout: 120000 }, async () => {
+  const { host, code } = await hostRoom(world);
+  const direct = await joinRoom(world, code, 'Direct');
+  const blocked = await joinRoom(world, code, 'Vpn', { net: 'rtc=off' });
+  assert.equal(await state(direct, (c) => c.transport), 'direct');
+  assert.equal(await state(blocked, (c) => c.transport), 'relay');
+  await host.getByRole('radio', { name: '5', exact: true }).click({ force: true });
+  await tap(host, 'start-game');
+  await answerAll([host, direct, blocked]);
+  await voteAll([host, direct, blocked]);
+  const res = await state(host, (c) => c.view.game.result.entries.map((e) => e.text));
+  assert.ok(res.includes("Vpn's answer"), 'relay player answered');
+  for (const p of [host, direct, blocked]) await p.context().close();
+});
+
+test('if the direct path dies mid-game the relay takes over without a disconnect', { timeout: 120000 }, async () => {
+  const { host, code } = await hostRoom(world);
+  const ann = await joinRoom(world, code, 'Ann');
+  const bob = await joinRoom(world, code, 'Bob');
+  await until(() => state(ann, (c) => c.transport === 'direct' && c.net.relayOpen), 20000);
+  await tap(host, 'start-game');
+  await ann.getByTestId('answer-input').waitFor({ timeout: 20000 });
+  await ann.evaluate(() => window.__aipsych.current.net.disableDirect());
+  // Watch presence on the host for a while: Ann must never drop offline.
+  let dropped = false;
+  for (let i = 0; i < 30; i++) {
+    if ((await onlineCount(host)) < 2) dropped = true;
+    await sleep(300);
+  }
+  assert.equal(dropped, false, 'no disconnect when the direct path died');
+  assert.equal(await state(ann, (c) => c.transport), 'relay');
+  await ann.getByTestId('answer-input').fill('still here via relay');
+  await tap(ann, 'submit-answer');
+  await until(() => state(host, (c) => Object.values(c.room.game.answers).some((a) => a.text === 'still here via relay')), 10000);
+  for (const p of [host, ann, bob]) await p.context().close();
+});
+
+test('hard time limit sends whatever was typed and moves on by itself', { timeout: 120000 }, async () => {
+  const { host, code } = await hostRoom(world);
+  const ann = await joinRoom(world, code, 'Ann');
+  const bob = await joinRoom(world, code, 'Bob', { net: 'rtc=off' });
+  await host.getByRole('radio', { name: 'Fast', exact: true }).click({ force: true });
+  await tap(host, 'start-game');
+  for (const p of [ann, bob]) await p.getByTestId('answer-input').waitFor({ timeout: 20000 });
+  await ann.getByTestId('answer-input').fill('typed but never submitted');
+  await bob.getByTestId('answer-input').fill('bob submitted this');
+  await tap(bob, 'submit-answer');
+  // Bob opens his answer to edit it but runs out of time: his original stays.
+  await bob.getByText('change it').click({ force: true });
+  await bob.getByTestId('answer-input').fill('bob edit that never got sent');
+  await sleep(1200);
+  await host.evaluate(() => {
+    const c = window.__aipsych.current;
+    c.room.game.timer.endsAt = Date.now() + 1500; // fast-forward the 60s limit
+    c.commit();
+  });
+  for (const p of [host, ann, bob]) await p.getByTestId('vote-phase').waitFor({ timeout: 15000 });
+  const texts = await state(host, (c) => c.room.game.options.map((o) => o.text));
+  assert.ok(texts.includes('typed but never submitted'), 'unsent text was submitted: ' + texts);
+  assert.ok(texts.includes('bob submitted this'), 'original kept when the edit was not sent');
+  assert.ok(!texts.includes('bob edit that never got sent'));
+  // the voting limit also moves on by itself
+  await host.evaluate(() => {
+    const c = window.__aipsych.current;
+    c.room.game.timer.endsAt = Date.now() + 500;
+    c.commit();
+  });
+  for (const p of [host, ann, bob]) await p.getByTestId('results-phase').waitFor({ timeout: 15000 });
+  for (const p of [host, ann, bob]) await p.context().close();
 });

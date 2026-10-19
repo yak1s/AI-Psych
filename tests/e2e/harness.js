@@ -5,6 +5,8 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { chromium } from 'playwright';
 import { PeerServer } from 'peer';
+import { Aedes } from 'aedes';
+import { WebSocketServer, createWebSocketStream } from 'ws';
 
 const ROOT = new URL('../..', import.meta.url).pathname;
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain', '.csv': 'text/csv' };
@@ -27,6 +29,7 @@ export async function startWorld() {
   });
   const httpPort = await listen(http);
   const signal = await startSignal();
+  const broker = await startBroker();
   const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
   const errors = [];
   const world = {
@@ -34,7 +37,9 @@ export async function startWorld() {
     errors,
     signal,
     base: `http://127.0.0.1:${httpPort}/`,
-    query: () => `signal=http://127.0.0.1:${world.signal.port}/&ice=none&nosw=1`,
+    broker,
+    /** extra: e.g. 'rtc=off' to simulate a network where WebRTC can't connect (VPN, strict NAT). */
+    query: (extra = '') => `signal=http://127.0.0.1:${world.signal.port}/&ice=none&nosw=1&relay=ws://127.0.0.1:${broker.port}${extra ? '&' + extra : ''}`,
     async device(name, { width = 420, height = 860, context } = {}) {
       const ctx = context || (await browser.newContext({ viewport: { width, height } }));
       const page = await ctx.newPage();
@@ -51,6 +56,7 @@ export async function startWorld() {
     async close() {
       await browser.close();
       await world.signal.close();
+      await broker.close();
       http.close();
     },
   };
@@ -82,6 +88,24 @@ async function startSignal(port = 0) {
   };
 }
 
+/** A local MQTT-over-WebSocket broker standing in for the public relay brokers. */
+async function startBroker() {
+  const aedes = await Aedes.createBroker();
+  const server = createServer();
+  const wss = new WebSocketServer({ server, handleProtocols: (p) => (p.has('mqtt') ? 'mqtt' : false) });
+  wss.on('connection', (ws) => aedes.handle(createWebSocketStream(ws)));
+  const port = await listen(server);
+  return {
+    port,
+    close: () =>
+      new Promise((r) => {
+        for (const c of wss.clients) c.terminate();
+        aedes.close(() => server.close(() => r()));
+        setTimeout(r, 500);
+      }),
+  };
+}
+
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export async function until(fn, ms = 30000, step = 150) {
@@ -105,9 +129,9 @@ export const tap = (page, testid) => page.getByTestId(testid).click({ force: tru
 /** Read the live controller state of a device. `fn` runs in the page, so it can't use outer variables. */
 export const state = (page, fn) => page.evaluate(`(() => { const c = window.__aipsych && window.__aipsych.current; return (${fn})(c); })()`);
 
-export async function hostRoom(world, name = 'Hosty', opts) {
+export async function hostRoom(world, name = 'Hosty', opts = {}) {
   const host = await world.device('host', opts);
-  await host.goto(world.base + '?' + world.query());
+  await host.goto(world.base + '?' + world.query(opts.net));
   await tap(host, 'host-btn');
   await host.getByTestId('name-input').fill(name);
   await tap(host, 'create-room');
@@ -117,9 +141,9 @@ export async function hostRoom(world, name = 'Hosty', opts) {
   return { host, code };
 }
 
-export async function joinRoom(world, code, name, opts) {
+export async function joinRoom(world, code, name, opts = {}) {
   const p = await world.device(name, opts);
-  await p.goto(world.base + `?room=${code}&` + world.query());
+  await p.goto(world.base + `?room=${code}&` + world.query(opts.net));
   await p.getByTestId('name-input').fill(name);
   await tap(p, 'join-go');
   await until(() => state(p, (c) => c && c.welcomed && !!c.view), 20000);

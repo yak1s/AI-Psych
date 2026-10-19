@@ -11,7 +11,9 @@
     "signal": "npx --yes peer --port 9000"
   },
   "devDependencies": {
+    "aedes": "^1.2.0",
     "peer": "^1.0.2",
-    "playwright": "^1.55.0"
+    "playwright": "^1.55.0",
+    "ws": "^8.18.0"
   }
 }

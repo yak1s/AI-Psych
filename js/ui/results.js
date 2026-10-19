@@ -1,7 +1,8 @@
-import { html, useState, useEffect } from '../vendor/preact-htm.js';
+import { html, useState, useEffect, useRef } from '../vendor/preact-htm.js';
 import { Btn, Avatar, PName, QuestionText, Doodle, cx, playerMap, useStep, confetti } from './common.js';
 import { brush, wash } from './art.js';
 import { seen, markSeen } from '../storage.js';
+import { Settings } from './lobby.js';
 import { sfx, buzz } from './audio.js';
 
 // ---------------------------------------------------------------------------
@@ -29,39 +30,97 @@ function ResultEntry({ e, stage, who, view, top, index }) {
   </div>`;
 }
 
+/** Animated number: counts from `from` to `to` once `run` turns true. */
+function CountUp({ from, to, run, delay = 0 }) {
+  const [v, setV] = useState(run ? to : from);
+  useEffect(() => {
+    if (!run || from === to) return setV(to);
+    let raf;
+    const t0 = performance.now() + delay;
+    const step = (t) => {
+      const k = Math.min(1, Math.max(0, (t - t0) / 1100));
+      setV(Math.round(from + (to - from) * (1 - Math.pow(1 - k, 3))));
+      if (k < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [run, to]);
+  return v;
+}
+
+const ranksOf = (order, sc) => {
+  const r = {};
+  order.forEach((pid, i) => (r[pid] = i > 0 && (sc[pid] || 0) === (sc[order[i - 1]] || 0) ? r[order[i - 1]] : i + 1));
+  return r;
+};
+
+/**
+ * Leaderboard that starts in the old order and, once it scrolls into view,
+ * slides everyone to their new place while the scores count up.
+ */
 export function Scoreboard({ view, before, after, seenKey }) {
-  const animate = !seenKey || !seen(seenKey);
+  const already = !!seenKey && seen(seenKey);
   const who = playerMap(view);
   const ids = view.players.map((p) => p.id);
   const sortBy = (sc) => ids.slice().sort((a, b) => (sc[b] || 0) - (sc[a] || 0) || who(a).name.localeCompare(who(b).name));
   const orderAfter = sortBy(after);
   const orderBefore = sortBy(before);
-  const [settled, setSettled] = useState(!animate);
+  const rankBefore = ranksOf(orderBefore, before);
+  const rankAfter = ranksOf(orderAfter, after);
+  const [settled, setSettled] = useState(already);
+  const [landed, setLanded] = useState(already); // ranks flip once the rows have arrived
+  const ref = useRef();
   useEffect(() => {
-    if (!animate) return;
-    const t = setTimeout(() => {
-      setSettled(true);
-      sfx('whoosh');
-      if (seenKey) markSeen(seenKey);
-    }, 450);
-    return () => clearTimeout(t);
+    if (already) return;
+    let timer;
+    const go = () => {
+      timer = setTimeout(() => {
+        setSettled(true);
+        sfx('whoosh');
+        orderAfter.forEach((pid, i) => {
+          if (rankAfter[pid] < rankBefore[pid]) setTimeout(() => sfx('pop'), 350 + i * 90);
+        });
+        if (seenKey) markSeen(seenKey);
+        timer = setTimeout(() => setLanded(true), 1100 + orderAfter.length * 90);
+      }, 350);
+    };
+    if (!('IntersectionObserver' in window) || !ref.current) {
+      go();
+      return () => clearTimeout(timer);
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          io.disconnect();
+          go();
+        }
+      },
+      { threshold: 0.55 },
+    );
+    io.observe(ref.current);
+    return () => {
+      io.disconnect();
+      clearTimeout(timer);
+    };
   }, []);
   const max = Math.max(1, ...orderAfter.map((p) => after[p] || 0));
   const STEP = 50;
-  let rank = 0;
-  return html`<div class="card"><div class="card-title">${Doodle.star({ size: 24 })} Scoreboard</div>
+  return html`<div class="card" ref=${ref} data-testid="scoreboard"><div class="card-title">${Doodle.star({ size: 24 })} Scoreboard</div>
     <div class="scoreboard" style=${`height:${orderAfter.length * STEP - 10}px`}>
       ${orderAfter.map((pid, i) => {
         const p = who(pid);
-        const sc = settled ? after[pid] || 0 : before[pid] || 0;
-        const delta = (after[pid] || 0) - (before[pid] || 0);
+        const b = before[pid] || 0;
+        const a = after[pid] || 0;
         const shift = settled ? 0 : (orderBefore.indexOf(pid) - i) * STEP;
-        if (i === 0 || (after[pid] || 0) !== (after[orderAfter[i - 1]] || 0)) rank = i + 1;
-        return html`<div key=${pid} class=${cx('score-row', pid === view.me && 'me')} style=${`position:absolute;left:0;right:0;top:${i * STEP}px;height:40px;transform:translateY(${shift}px)`}>
-          <span class="rank">${rank === 1 && (after[pid] || 0) > 0 ? '👑' : rank}</span>
+        const rank = landed ? rankAfter[pid] : rankBefore[pid];
+        const moved = rankBefore[pid] - rankAfter[pid];
+        const delay = settled && !already ? i * 0.09 : 0;
+        return html`<div key=${pid} class=${cx('score-row', pid === view.me && 'me', moved && settled && 'moving')}
+          style=${`position:absolute;left:0;right:0;top:${i * STEP}px;height:40px;transform:translateY(${shift}px);transition-delay:${delay}s;z-index:${moved > 0 ? 2 : 1}`}>
+          <span class="rank">${rank === 1 && (landed ? a : b) > 0 ? '👑' : rank}</span>
           <${Avatar} p=${p} size="sm" />
-          <div class="bar"><i style=${`width:${(sc / max) * 100}%;background-image:${brush(p.color, i + 1)}`}></i><span>${p.name}</span></div>
-          <span class="num">${sc}${settled && delta > 0 && html`<span class="delta">+${delta}</span>`}</span>
+          <div class="bar"><i style=${`width:${((settled ? a : b) / max) * 100}%;transition-delay:${delay}s;background-image:${brush(p.color, i + 1)}`}></i><span>${p.name}</span></div>
+          <span class="num"><${CountUp} from=${b} to=${a} run=${settled} delay=${delay * 1000} />${settled && a > b && html`<span class="delta">+${a - b}</span>`}${settled && moved !== 0 && !already && html`<span class=${cx('arrow', moved > 0 ? 'up' : 'down')}>${moved > 0 ? '▲' : '▼'}</span>`}</span>
         </div>`;
       })}
     </div>
@@ -93,10 +152,11 @@ export function ResultsPhase({ ctrl, view }) {
   const key = 'res.' + g.q.key;
   const [skip, setSkip] = useState(() => seen(key));
   const total = r.entries.length * 3;
-  const step = useStep(total, (i) => (i % 3 === 0 ? 650 : i % 3 === 1 ? 850 : 1250), { key: g.q.key + skip, skip, delay: 600 });
+  const pace = r.entries.length > 10 ? 0.45 : r.entries.length > 6 ? 0.65 : 1; // big rooms reveal faster
+  const step = useStep(total, (i) => pace * (i % 3 === 0 ? 650 : i % 3 === 1 ? 850 : 1250), { key: g.q.key + skip, skip, delay: 600 });
   const done = step >= total;
   const maxPts = Math.max(0, ...r.entries.map((e) => e.points));
-  const isLast = g.idx + 1 >= g.n;
+  const isLast = g.isLast || g.idx + 1 >= g.n;
 
   useEffect(() => {
     if (skip || step === 0) return;
@@ -131,9 +191,46 @@ export function ResultsPhase({ ctrl, view }) {
     ${done &&
     html`
       ${r.missingAnswers.length > 0 && html`<p class="missing-note">🐢 No answer from ${r.missingAnswers.map((p) => who(p).name).join(', ')} this time.</p>`}
-      <${Scoreboard} view=${view} before=${r.before} after=${r.after} seenKey=${key + '.sb'} />
+      ${g.autoAnswered && g.autoAnswered.length > 0 && html`<p class="missing-note">⏰ The clock sent ${g.autoAnswered.map((p) => who(p).name).join(', ')}'s answer${g.autoAnswered.length > 1 ? 's' : ''} for them.</p>`}
+      ${isLast || !r.after
+        ? html`<div class="card vault" data-testid="vault"><span class="big">🔒</span>The final scores are locked in the vault…<br /><span class="script" style="font-size:22px">until the big reveal!</span></div>`
+        : html`<${Scoreboard} view=${view} before=${r.before} after=${r.after} seenKey=${key + '.sb'} />`}
       <${ReadyBar} ctrl=${ctrl} view=${view} isLast=${isLast} />
     `}
+  </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Between games
+
+function Trophies({ view, who }) {
+  const rows = Object.entries(view.wins || {}).filter(([pid]) => view.players.some((p) => p.id === pid)).sort((a, b) => b[1] - a[1]);
+  if (!rows.length || (view.gamesPlayed || 0) < 2) return null;
+  return html`<div class="card" style="width:100%;text-align:left" data-testid="trophies">
+    <div class="card-title">🏆 Trophy cabinet — ${view.gamesPlayed} games in this room</div>
+    ${rows.map(([pid, n]) => html`<div key=${pid} class="row" style="justify-content:space-between;padding:3px 0">
+      <span class="row" style="gap:10px"><${Avatar} p=${who(pid)} size="sm" /> <${PName} p=${who(pid)} /></span>
+      <span style="font-size:22px">${'🏆'.repeat(Math.min(n, 6))}${n > 6 ? ' ×' + n : ''}</span>
+    </div>`)}
+  </div>`;
+}
+
+function NextGame({ ctrl, view }) {
+  const g = view.game;
+  const info = view.host;
+  const pool = info.pool;
+  const n = Math.min(info.settings.rounds, pool.total);
+  return html`<div class="stack next-game" style="width:100%" data-testid="next-game">
+    <div class="card">
+      <div class="card-title">🔁 Ready for game ${g.number + 1}?</div>
+      <p style="margin:0">Same room and players. Scores start from zero, the trophy cabinet keeps counting, and the AI never asks a question twice.</p>
+    </div>
+    <${Settings} ctrl=${ctrl} info=${info} title=${`Settings for game ${g.number + 1}`} />
+    <p class="muted small center" style="margin:0">${pool.total ? `${pool.total} fresh question${pool.total === 1 ? '' : 's'} left${pool.total < info.settings.rounds ? ` — this game will be ${pool.total} long` : ''}.` : 'No fresh questions left — go back to the lobby to load another deck or reset.'}</p>
+    <div class="row center">
+      <${Btn} color="paper" sound="tap" onClick=${() => ctrl.dispatch({ type: 'endGame' })} testid="back-lobby">Lobby (deck & players)<//>
+      <${Btn} big color="coral" pulse disabled=${!pool.total} onClick=${() => ctrl.dispatch({ type: 'playAgain' })} sound="whoosh" testid="play-again">▶ Start game ${g.number + 1} (${n} questions)<//>
+    </div>
   </div>`;
 }
 
@@ -230,13 +327,14 @@ export function FinalPhase({ ctrl, view }) {
         </div>`)}
       </div>
       ${f.reason === 'out-of-questions' && html`<p class="muted small">The AI ran out of fresh questions for this group, so the game ended early.</p>`}
+      <${Trophies} view=${view} who=${who} />
       ${isHost
-        ? html`<div class="row center">
-            <${Btn} color="paper" sound="tap" onClick=${() => ctrl.dispatch({ type: 'endGame' })} testid="back-lobby">Back to lobby<//>
-            <${Btn} big color="coral" pulse onClick=${() => ctrl.dispatch({ type: 'playAgain' })} sound="whoosh" testid="play-again">🔁 Play again<//>
-          </div>
-          <p class="muted small">New game, same room — the AI never repeats a question.</p>`
-        : html`<p class="script" style="font-size:24px">Waiting for the host to start another round<span class="dots"></span></p>`}
+        ? html`<${NextGame} ctrl=${ctrl} view=${view} />`
+        : html`<div class="card next-game" style="width:100%">
+            <div class="card-title">🔁 Game ${g.number + 1} is coming up</div>
+            <p style="margin:0">Same room, same players, <b>fresh scores</b> — and the AI still remembers everything (no question is ever asked twice).</p>
+            <p class="script" style="font-size:22px;margin:8px 0 0">The host is choosing the settings<span class="dots"></span></p>
+          </div>`}
     `}
   </div>`;
 }
