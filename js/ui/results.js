@@ -9,25 +9,28 @@ import { WaitChat } from './chat.js';
 // ---------------------------------------------------------------------------
 // Round results: answers revealed one by one, least popular first.
 
-function ResultEntry({ e, stage, who, view, top, index }) {
+/**
+ * One answer card. Every part is laid out from the start (just invisible until its turn),
+ * so the page never changes height while the results come in — scrolling stays put.
+ */
+function ResultEntry({ e, stage, who, view, top, index, hidden }) {
   const author = who(e.pid);
   const judge = e.votes.filter((v) => v.pts === 2);
-  return html`<div class=${cx('result', top && stage >= 2 && 'top')} style=${`background-image:${stage >= 1 ? wash(author.color, index + 30, { strength: 0.55 }) : 'none'}`} data-testid="result">
+  return html`<div class=${cx('result', hidden && 'pending', `s${stage}`, top && stage >= 2 && 'top')} style=${`background-image:${stage >= 1 ? wash(author.color, index + 30, { strength: 0.55 }) : 'none'}`} data-testid=${hidden ? 'result-pending' : 'result'} aria-hidden=${hidden ? 'true' : null}>
     <div class="ans">“${e.text}”</div>
-    ${stage >= 1 &&
-    html`<div class="author">
+    <div class="author">
       <${Avatar} p=${author} size="sm" />
       <span class="by">— ${author.name}${e.pid === view.me ? ' (you!)' : ''}</span>
-    </div>`}
-    ${stage >= 2 &&
-    html`<div class="voters">
-        ${e.votes.length === 0 && html`<span class="crickets">🦗 crickets…</span>`}
-        ${e.votes.map((v, i) => html`<span key=${v.pid} class=${cx('voter', v.pts === 2 && 'judge')} style=${`animation-delay:${i * 0.12}s`}>
-          <${Avatar} p=${who(v.pid)} size="xs" /> ${who(v.pid).name} ${v.pts === 2 ? '⚖️ +2' : '+1'}
-        </span>`)}
-        ${judge.length > 0 && html`<span class="script" style="font-size:19px">the judge loved it!</span>`}
-      </div>
-      <div class=${cx('pts', e.points === 0 && 'zero')}>${e.points ? `+${e.points}` : '0'}</div>`}
+    </div>
+    <div class="voters">
+      ${e.votes.length === 0 && html`<span class="crickets">🦗 crickets…</span>`}
+      ${e.votes.map((v, i) => html`<span key=${v.pid} class=${cx('voter', v.pts === 2 && 'judge')} style=${`animation-delay:${i * 0.12}s`}>
+        <${Avatar} p=${who(v.pid)} size="xs" /> ${who(v.pid).name} ${v.pts === 2 ? '⚖️ +2' : '+1'}
+      </span>`)}
+      ${judge.length > 0 && html`<span class="script" style="font-size:19px">the judge loved it!</span>`}
+    </div>
+    ${e.forfeit > 0 && html`<div class="forfeit" data-testid="forfeit">🙈 ${e.pid === view.me ? "You didn't" : `${author.name} didn't`} vote, so these ${e.forfeit} point${e.forfeit > 1 ? 's' : ''} don't count. No vote, no points!</div>`}
+    <div class=${cx('pts', e.points === 0 && 'zero')}>${e.points ? `+${e.points}` : '0'}</div>
   </div>`;
 }
 
@@ -143,7 +146,7 @@ function ReadyBar({ ctrl, view, isLast }) {
       ${view.players.map((p) => html`<${Avatar} key=${p.id} p=${p} size="sm" off=${!p.online} badge=${g.ready.includes(p.id) ? '✓' : null} />`)}
     </div>
     ${ready && waiting.length > 0 && html`<span class="muted small">still waiting on ${waiting.map((p) => p.name).join(', ')}</span>`}
-    ${ready && waiting.length > 0 && html`<div style="width:100%;text-align:left"><${WaitChat} ctrl=${ctrl} view=${view} scope=${g.q.key} /></div>`}
+    ${ready && waiting.length > 0 && html`<div style="width:100%;text-align:left"><${WaitChat} ctrl=${ctrl} view=${view} scope=${g.q.key} label=${`Q${g.idx + 1} · results`} /></div>`}
   </div>`;
 }
 
@@ -188,13 +191,14 @@ export function ResultsPhase({ ctrl, view }) {
     <div class="center"><h1 style="font-size:32px">The results are in!</h1></div>
     <div class="card flat" style="padding:12px 16px;text-align:center"><${QuestionText} segments=${g.q.segments} who=${who} animate=${false} compact /></div>
     <div class="result-list">
-      ${r.entries.map((e, i) => (stageOf(i) > 0 ? html`<${ResultEntry} key=${e.oid} e=${e} index=${i} stage=${stageOf(i) - 1} who=${who} view=${view} top=${e.points === maxPts && maxPts > 0} />` : null))}
+      ${r.entries.map((e, i) => html`<${ResultEntry} key=${e.oid} e=${e} index=${i} hidden=${stageOf(i) === 0} stage=${Math.max(0, stageOf(i) - 1)} who=${who} view=${view} top=${e.points === maxPts && maxPts > 0} />`)}
     </div>
     ${!done && visible.length < r.entries.length + 1 && html`<div class="center"><button class="link-btn" onClick=${() => { sfx('tap'); setSkip(true); markSeen(key); }}>skip ⏩</button></div>`}
     ${done &&
     html`
       ${r.missingAnswers.length > 0 && html`<p class="missing-note">🐢 No answer from ${r.missingAnswers.map((p) => who(p).name).join(', ')} this time.</p>`}
       ${g.autoAnswered && g.autoAnswered.length > 0 && html`<p class="missing-note">⏰ The clock sent ${g.autoAnswered.map((p) => who(p).name).join(', ')}'s answer${g.autoAnswered.length > 1 ? 's' : ''} for them.</p>`}
+      ${r.autoVotes && r.autoVotes.length > 0 && html`<p class="missing-note">⏰ ${r.autoVotes.map((p) => who(p).name).join(', ')} picked but didn't lock in — the clock locked it for them.</p>`}
       ${isLast || !r.after
         ? html`<div class="card vault" data-testid="vault"><span class="big">🔒</span>The final scores are locked in the vault…<br /><span class="script" style="font-size:22px">until the big reveal!</span></div>`
         : html`<${Scoreboard} view=${view} before=${r.before} after=${r.after} seenKey=${key + '.sb'} />`}
@@ -240,12 +244,20 @@ function NextGame({ ctrl, view }) {
 // ---------------------------------------------------------------------------
 // Final ceremony
 
-function PodiumStep({ r, place, who }) {
-  if (!r) return html`<div class=${`step p${place}`} style="visibility:hidden"><div class="block"></div></div>`;
-  return html`<div class=${`step p${place}`}>
-    <${Avatar} p=${who(r.pid)} size=${place === 1 ? 'lg' : ''} crown=${place === 1} />
-    <div class="nm">${who(r.pid).name}</div>
-    <div class="block">${r.score}</div>
+const placeName = (rank) => ({ 1: 'first', 2: 'second', 3: 'third' })[rank] || rank + 'th';
+
+const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
+
+/** One podium step; ties share it (several people, one block). */
+function PodiumStep({ group, place, who }) {
+  if (!group) return html`<div class=${`step p${place}`} style="visibility:hidden"><div class="block"></div></div>`;
+  const many = group.length > 1;
+  return html`<div class=${cx(`step p${place}`, many && 'tied')} data-testid=${'podium-' + place}>
+    <div class="podium-people">
+      ${group.map((r, i) => html`<${Avatar} key=${r.pid} p=${who(r.pid)} size=${place === 1 && !many ? 'lg' : group.length > 2 ? 'sm' : ''} crown=${place === 1} delay=${i * 0.15} />`)}
+    </div>
+    <div class="nm">${group.map((r) => who(r.pid).name).join(' & ')}</div>
+    <div class="block"><span class="medal">${MEDALS[group[0].rank] || ''}</span>${group[0].score}</div>
   </div>`;
 }
 
@@ -258,8 +270,12 @@ export function FinalPhase({ ctrl, view }) {
   const step = useStep(4, (i) => [0, 1400, 1500, 2200][i] || 1500, { key: g.id, skip, delay: 2900 });
   const ranking = f.ranking.filter((r) => view.players.some((p) => p.id === r.pid));
   const winners = ranking.filter((r) => r.rank === 1);
-  const second = ranking.find((r) => r.rank === 2) || null;
-  const third = ranking.find((r) => r.rank === 3) || null;
+  // The podium shows every place up to 3rd, with ties sharing a step: 1st + two 2nds = 2 steps,
+  // 3 people; 1st, 2nd and three 3rds = 3 steps, 5 people.
+  const ranks = [...new Set(ranking.map((r) => r.rank))].filter((r) => r <= 3).sort((a, b) => a - b);
+  const groups = ranks.map((rk) => ranking.filter((r) => r.rank === rk));
+  const second = groups[1] || null;
+  const third = groups[2] || null;
   const me = ranking.find((r) => r.pid === view.me);
   const isHost = ctrl.isHost;
 
@@ -296,7 +312,7 @@ export function FinalPhase({ ctrl, view }) {
   }
 
   return html`<div class="final-stage enter" data-testid="final-phase">
-    ${step < 3 && html`<div class="final-caption" key=${step}>${step === 1 ? (third ? '🥉 In third place…' : '🥁 Drumroll…') : second ? '🥈 In second place…' : '🥁 Almost there…'}</div>`}
+    ${step < 3 && html`<div class="final-caption" key=${step}>${step === 1 ? (third ? `${MEDALS[third[0].rank]} In ${placeName(third[0].rank)} place${third.length > 1 ? ` — a ${third.length}-way tie` : ''}…` : '🥁 Drumroll…') : second ? `${MEDALS[second[0].rank]} In ${placeName(second[0].rank)} place${second.length > 1 ? ` — a ${second.length}-way tie` : ''}…` : '🥁 Almost there…'}</div>`}
     ${step >= 3 &&
     html`<div class="stack" style="align-items:center;gap:6px">
       <div class="crown-drop">${Doodle.crown({ size: 90, sw: 3 })}</div>
@@ -308,9 +324,9 @@ export function FinalPhase({ ctrl, view }) {
       <div class="script" style="font-size:26px">with ${winners[0] ? winners[0].score : 0} points${winners.some((w) => w.pid === view.me) ? ' — that’s YOU! 🎉' : ''}</div>
     </div>`}
     <div class="podium" style="position:relative;z-index:6">
-      ${step >= 2 ? html`<${PodiumStep} r=${second} place=${2} who=${who} />` : html`<div class="step" style="visibility:hidden"></div>`}
-      ${step >= 3 ? html`<${PodiumStep} r=${winners[0]} place=${1} who=${who} />` : html`<div class="step" style="visibility:hidden"></div>`}
-      ${step >= 1 ? html`<${PodiumStep} r=${third} place=${3} who=${who} />` : html`<div class="step" style="visibility:hidden"></div>`}
+      ${second && (step >= 2 ? html`<${PodiumStep} group=${second} place=${2} who=${who} />` : html`<div class="step" style="visibility:hidden"></div>`)}
+      ${step >= 3 ? html`<${PodiumStep} group=${winners} place=${1} who=${who} />` : html`<div class="step" style="visibility:hidden"></div>`}
+      ${third && (step >= 1 ? html`<${PodiumStep} group=${third} place=${3} who=${who} />` : html`<div class="step" style="visibility:hidden"></div>`)}
     </div>
     ${step >= 4 &&
     html`

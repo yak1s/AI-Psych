@@ -21,16 +21,16 @@ export function HowToPlay({ onClose }) {
     <ol class="rules">
       <li>One person <b>hosts</b> on their phone or laptop. Everyone else <b>joins</b> with the 4-digit code (${MAX_PLAYERS} players max).</li>
       <li>Our AI asks a question <b>about one of you</b>. Everybody writes a funny (or honest…) answer.</li>
-      <li>Everyone votes for their favorite answer — but not their own!</li>
+      <li>Everyone votes for their favorite answer — but not their own! <b>No vote, no points:</b> if you don't vote, your own answer's points don't count.</li>
       <li>The person the question is about is the <b>judge</b>: their vote is worth <b>2 points</b>. Everyone else's vote is worth 1.</li>
-      <li>Watch the creep-o-meter 👁️ — the AI gets more… <i>curious</i> as the game goes on.</li>
+      <li>The questions start innocent… and the AI gets more and more <i>curious</i> as the game goes on. It also notices things about you while you play. 👀</li>
     </ol>
-    <p class="muted small">No accounts, no downloads. If your connection drops or you refresh, you'll pop right back in.</p>
+    <p class="muted small">No accounts, no downloads. If your connection drops or you refresh, you'll pop right back in — even if the host's phone dies, someone else takes over and the game goes on.</p>
     <div class="row" style="justify-content:flex-end"><${Btn} small onClick=${onClose}>Got it!<//></div>
   <//>`;
 }
 
-export function Home({ onHost, onJoin, onCheck, resumeHost, resumePlayer, onResumeHost, onResumePlayer, onForgetHost, onForgetPlayer }) {
+export function Home({ onHost, onJoin, resumeHost, resumePlayer, onResumeHost, onResumePlayer, onForgetHost, onForgetPlayer }) {
   const [rules, setRules] = useState(false);
   return html`<div class="screen enter">
     <div class="stack" style="align-items:center;gap:22px">
@@ -56,9 +56,8 @@ export function Home({ onHost, onJoin, onCheck, resumeHost, resumePlayer, onResu
       </div>
       <div class="row center" style="gap:22px">
         <button class="link-btn" onClick=${() => { sfx('tap'); setRules(true); }}>How do I play?</button>
-        <button class="link-btn" onClick=${() => { sfx('tap'); onCheck(); }} data-testid="netcheck-btn">📡 Test my connection</button>
       </div>
-      <p class="footer-note">No accounts · no app · 2–${MAX_PLAYERS} players · works across any network</p>
+      <p class="footer-note">No accounts · no app · 2–${MAX_PLAYERS} players</p>
     </div>
     ${rules && html`<${HowToPlay} onClose=${() => setRules(false)} />`}
   </div>`;
@@ -100,7 +99,6 @@ function NameField({ prof, error, autoFocus }) {
     <label for="name">What should we call you?</label>
     <input id="name" class=${cx('input', error && 'error')} maxlength=${NAME_MAX} autocomplete="nickname" placeholder="Your name"
       value=${prof.name} onInput=${(e) => prof.setName(e.currentTarget.value.replace(/[{}]/g, ''))} autoFocus=${autoFocus} data-testid="name-input" />
-    <span class="muted small">This is the name the AI will use in questions 😉</span>
   </div>`;
 }
 
@@ -196,9 +194,17 @@ export function JoinForm({ initialCode = '', error, onBack, onJoin }) {
   </div>`;
 }
 
-export function Knocking({ code, status, onCancel, since }) {
+export function Knocking({ code, status, onCancel, since, holding }) {
   const now = useNow(1000);
   const long = now - since > 14000;
+  if (holding) {
+    return html`<div class="screen enter"><div class="center-msg" data-testid="knock-hold">
+      <div class="knock">🛎️</div>
+      <h2>${holding.claim ? 'Asking to get your seat back' : 'The game already started!'}<span class="dots"></span></h2>
+      <p class="muted">${holding.claim ? 'Same name as a player who got disconnected — the host just needs to confirm it is you.' : 'The host has to let you in. Hang tight — you will jump in with the next question.'}</p>
+      <${Btn} color="paper" sound="tap" onClick=${onCancel}>${Doodle.back({ size: 22 })} Never mind<//>
+    </div></div>`;
+  }
   return html`<div class="screen enter"><div class="center-msg">
     <div class="knock">🚪</div>
     <h2>Knocking on room ${code}<span class="dots"></span></h2>
@@ -215,6 +221,7 @@ const ENDED = {
   unknown: ['🤔', "This room doesn't remember you", 'The room may have been restarted. Join again with a name.'],
   replaced: ['📱', "You're playing in another tab", 'The same player opened the game somewhere else.'],
   proto: ['🔄', 'Version mismatch', 'Refresh the page (host too) so everyone runs the same version.'],
+  denied: ['🚪', "The host didn't let you in", 'Maybe next game! Ask the host if you think it was a mistake.'],
 };
 
 export function Ended({ reason, onHome, onReclaim, onRejoin }) {

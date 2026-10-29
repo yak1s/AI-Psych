@@ -1,6 +1,6 @@
 // Offline cache (stale-while-revalidate). A refresh keeps working during short
 // internet outages; new deploys are picked up on the following load.
-const CACHE = 'aipsych-v4';
+const CACHE = 'aipsych-v5';
 const CORE = [
   './',
   './index.html',
@@ -19,6 +19,9 @@ const CORE = [
   './js/game/deck.js',
   './js/game/starter.js',
   './js/game/engine.js',
+  './js/game/dynamic.js',
+  './js/signals.js',
+  './js/stats.js',
   './js/net/host-net.js',
   './js/net/client-net.js',
   './js/net/mqtt.js',
@@ -32,8 +35,11 @@ const CORE = [
   './js/ui/game.js',
   './js/ui/results.js',
   './js/ui/lines.js',
-  './js/ui/netcheck.js',
   './js/ui/chat.js',
+  './js/ui/people.js',
+  './js/ui/notify.js',
+  './js/ui/fullscreen.js',
+  './js/ui/deckprompt.js',
   './js/vendor/preact-htm.js',
   './js/vendor/peer.js',
   './js/vendor/qrcode.js',
@@ -77,6 +83,17 @@ self.addEventListener('fetch', (e) => {
         return cached;
       }
       return fresh;
+    }),
+  );
+});
+
+// Tapping a reminder brings the game back to the front.
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const c of list) if ('focus' in c) return c.focus();
+      return self.clients.openWindow ? self.clients.openWindow('./') : null;
     }),
   );
 });

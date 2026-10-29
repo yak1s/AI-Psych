@@ -57,6 +57,8 @@ function readOverrides() {
     if (params.has('debug')) out.debug = Number(params.get('debug')) || 2;
     if (params.has('relay')) out.relay = params.get('relay');
     if (params.has('rtc')) out.rtc = params.get('rtc');
+    if (params.has('geo')) out.geo = params.get('geo');
+    if (params.has('takeover')) out.takeover = Number(params.get('takeover')) || undefined;
     sessionStorage.setItem('aipsych.net', JSON.stringify(out));
   } catch {
     /* storage may be unavailable */
@@ -96,6 +98,16 @@ export function relayBrokers() {
   return RELAY_BROKERS;
 }
 
+/** How long the host must be unreachable before the next device takes over (?takeover=ms for tests). */
+export function takeoverMs() {
+  return overrides.takeover || 25000;
+}
+
+/** false when the rough IP-based location lookup is switched off (?geo=off) */
+export function geoEnabled() {
+  return overrides.geo !== 'off';
+}
+
 /** false when direct WebRTC is switched off (?rtc=off) — used to test the relay path. */
 export function rtcEnabled() {
   return overrides.rtc !== 'off';
@@ -115,6 +127,15 @@ export function netQuery() {
   return s ? '&' + s : '';
 }
 
-export function hostPeerId(code) {
-  return `${APP_ID}-room-${code}`;
+/** Proves an epoch announcement comes from someone who knows the room's secret id. */
+export function epochTag(roomId, epoch) {
+  let h = 2166136261;
+  const str = `${roomId}:epoch:${epoch}`;
+  for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619) >>> 0;
+  return h.toString(36);
+}
+
+/** The host's address. Each hand-over to another device (epoch) gets a fresh one. */
+export function hostPeerId(code, epoch = 0) {
+  return epoch ? `${APP_ID}-room-${code}-e${epoch}` : `${APP_ID}-room-${code}`;
 }

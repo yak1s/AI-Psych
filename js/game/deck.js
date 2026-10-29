@@ -142,6 +142,50 @@ function fromCsv(text, res) {
   }
 }
 
+/** Find the JSON in an AI's reply (```json fences, or text around it). */
+function extractJson(text) {
+  const fence = /```(?:json|JSON)?\s*\n?([\s\S]*?)(?:```|$)/.exec(text);
+  if (fence && /[[{]/.test(fence[1])) return fence[1].trim();
+  const t = text.trim();
+  if (/^[[{]/.test(t)) return t;
+  const i = t.indexOf('{');
+  if (i >= 0 && /"questions"\s*:/.test(t)) return t.slice(i, t.lastIndexOf('}') + 1 || undefined);
+  return null;
+}
+
+/** JSON.parse that forgives what chat AIs typically get wrong (and salvages a cut-off answer). */
+function parseJsonLoose(text) {
+  const attempts = [
+    (t) => t,
+    (t) => t.replace(/,\s*([\]}])/g, '$1'),
+    (t) => t.replace(/[\u201C\u201D]/g, '"').replace(/,\s*([\]}])/g, '$1'),
+  ];
+  let error = '';
+  for (const fix of attempts) {
+    try {
+      return { ok: true, data: JSON.parse(fix(text)) };
+    } catch (e) {
+      error = e.message;
+    }
+  }
+  // Cut off mid-way: keep every complete question object.
+  const last = text.lastIndexOf('}');
+  for (let end = last; end > 0; end = text.lastIndexOf('}', end - 1)) {
+    const head = text.slice(0, end + 1).replace(/,\s*$/, '');
+    for (const tail of [']}', '}]}', ']']) {
+      try {
+        const data = JSON.parse(head + tail);
+        const qs = Array.isArray(data) ? data : data.questions;
+        if (Array.isArray(qs) && qs.length) return { ok: true, data, salvaged: true };
+      } catch {
+        /* try a shorter cut */
+      }
+    }
+    if (last - end > 20000) break;
+  }
+  return { ok: false, error };
+}
+
 /**
  * Parse an uploaded deck. Always returns { ok, deck?, errors[], warnings[] }.
  * deck = { title, fileName, predicted: [{key, name}], questions: [...], counts: {level: n} }
@@ -155,12 +199,12 @@ export function parseDeck(text, fileName = 'deck') {
   if (!trimmed) return { ok: false, errors: ['The file is empty.'], warnings };
 
   const ext = (fileName.split('.').pop() || '').toLowerCase();
-  if (ext === 'json' || /^[\[{]/.test(trimmed)) {
-    try {
-      fromJson(JSON.parse(trimmed), res);
-    } catch (e) {
-      return { ok: false, errors: ['This JSON file has a typo: ' + e.message], warnings };
-    }
+  const json = extractJson(src);
+  if (ext === 'json' || json) {
+    const r = parseJsonLoose(json || trimmed);
+    if (!r.ok) return { ok: false, errors: ['This JSON has a typo: ' + r.error], warnings };
+    if (r.salvaged) warnings.push('The answer looked cut off — loaded every complete question.');
+    fromJson(r.data, res);
   } else if (ext === 'csv' || ext === 'tsv') {
     fromCsv(src, res);
   } else {

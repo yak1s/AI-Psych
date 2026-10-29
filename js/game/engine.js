@@ -5,8 +5,9 @@
 import { uid, shuffle, seeded, pick, random, normName, cleanText } from './util.js';
 import { renderSegments, segmentsToText } from './deck.js';
 import { STARTER } from './starter.js';
+import { dynamicCandidates } from './dynamic.js';
 
-export const MAX_PLAYERS = 16;
+export const MAX_PLAYERS = 30;
 export const MIN_PLAYERS = 2;
 export const TIMER_MS = 45000;
 export const HOST_TIMER_CHOICES = [30, 45, 60];
@@ -20,6 +21,8 @@ export const TIME_LIMITS = {
 const INTRO_MS = 4500; // the "AI is writing" intro before anyone can type
 const DEAL_MS = 650; // per answer card dealt on the voting screen
 const GRACE_MS = 1500; // let the last keystrokes arrive before a hard timer fires
+const EXTRA_STEP_MS = 5000; // a time limit runs out while someone is reconnecting: wait a bit…
+const EXTRA_MAX_MS = 25000; // …but never more than this in total
 export const ROUND_CHOICES = [5, 10, 15];
 export const ANSWER_MAX = 120;
 export const NAME_MAX = 14;
@@ -31,7 +34,8 @@ export const AVATARS = [
   '🐌', '🦋', '🐞', '🦈', '🐬', '🦜', '🦚', '🐲', '🦕', '🍉', '🍍', '🥨', '🧀', '🍪', '🍿', '🥐',
   '🎩', '👑', '🕶️', '🎸', '🎨', '📸', '🎮', '🚀', '⚽', '🎈', '🌈', '🌻', '🍄', '⭐', '🔮', '🧸',
 ];
-export const COLORS = ['coral', 'sky', 'sun', 'mint', 'grape', 'bubblegum', 'tangerine', 'leaf', 'ocean', 'rose', 'lime', 'indigo', 'peach', 'aqua', 'lilac', 'gold'];
+export const COLORS = ['coral', 'sky', 'sun', 'mint', 'grape', 'bubblegum', 'tangerine', 'leaf', 'ocean', 'rose', 'lime', 'indigo', 'peach', 'aqua', 'lilac', 'gold',
+  'berry', 'forest', 'denim', 'apricot', 'moss', 'sand', 'cocoa', 'slate', 'fuchsia', 'cyan', 'jade', 'ruby', 'amber', 'violet'];
 
 // ---------------------------------------------------------------------------
 // Rooms & players
@@ -47,12 +51,17 @@ export function createRoom({ code, host }) {
     deck: null,
     assign: {},
     used: [],
-    settings: { rounds: 10, subjectAnswers: true, showMeter: true, fillStarter: true, timeLimit: 'off' },
+    settings: { rounds: 10, subjectAnswers: true, fillStarter: true, clues: true, timeLimit: 'off' },
     awardsGiven: [],
     gamesPlayed: 0,
     game: null,
     acts: {},
     seq: 0,
+    epoch: 0, // bumps every time another device takes over hosting
+    requests: [], // people asking to join while a game is running (the host lets them in)
+    seenBy: {}, // pid -> {questionId: times seen} — what each player already played, on any device
+    signals: {}, // pid -> device clues (rough location, phone, languages…) for the AI's dynamic questions
+    stats: {}, // pid -> how they play (typing speed, voting speed, leaving the app…)
   };
   const res = addPlayer(room, host, { isHost: true });
   if (!res.ok) throw new Error(res.error);
@@ -96,6 +105,39 @@ export function addPlayer(room, profile, { isHost = false } = {}) {
   return { ok: true, player };
 }
 
+/**
+ * Someone joins with the name of a player who is currently disconnected (lost
+ * phone, cleared browser, different device): they can get that seat back, with
+ * their score and everything (the host approves it).
+ */
+export function seatByName(room, profile, online) {
+  const name = normName(cleanText(profile && profile.name, NAME_MAX));
+  if (!name) return null;
+  return activePlayers(room).find((p) => !p.isHost && normName(p.name) === name && !(online && online.has(p.id))) || null;
+}
+
+/** Is a game running right now (new people need the host's OK to join)? */
+export function inGame(room) {
+  return !!(room.game && room.game.phase !== 'final');
+}
+
+/** Ask to join mid-game. Returns the request. */
+export function requestJoin(room, req, ctx) {
+  room.requests = room.requests || [];
+  let r = room.requests.find((x) => x.joinId === req.joinId);
+  if (!r) {
+    r = { joinId: req.joinId, name: cleanText(req.name, NAME_MAX), avatar: AVATARS.includes(req.avatar) ? req.avatar : AVATARS[0], claim: req.claim || null, at: ctx.now, status: 'waiting' };
+    room.requests.push(r);
+    room.requests = room.requests.slice(-20);
+  }
+  return r;
+}
+
+/** Someone just got in (or back in): everyone's screen says hi. */
+export function greet(room, pid, kind, ctx) {
+  room.greet = { pid, kind, at: ctx.now };
+}
+
 /** Try to match a deck's predicted names to players who joined. */
 export function autoAssign(room) {
   if (!room.deck) return;
@@ -132,6 +174,24 @@ function removePlayer(room, pid, reason, ctx) {
 
 // ---------------------------------------------------------------------------
 // Question pool
+
+/** How many of these players have already played this question (on their own devices). */
+export function seenScore(room, qid, activeIds) {
+  let n = 0;
+  for (const pid of activeIds) {
+    const c = room.seenBy && room.seenBy[pid] && room.seenBy[pid][qid];
+    if (c) n += 1 + Math.min(c, 3) * 0.25;
+  }
+  return n;
+}
+
+function markSeen(room, qid, activeIds) {
+  room.seenBy = room.seenBy || {};
+  for (const pid of activeIds) {
+    const m = (room.seenBy[pid] ||= {});
+    m[qid] = (m[qid] || 0) + 1;
+  }
+}
 
 function eligibleDeck(room, activeIds) {
   if (!room.deck) return [];
@@ -190,18 +250,47 @@ function mapQuestion(room, g, q, activeIds) {
   return { named, wild, about, score };
 }
 
-function chooseQuestion(room, g, activeIds) {
+function chooseQuestion(room, g, activeIds, ctx) {
   const pool = questionPool(room, activeIds);
-  const list = pool.primary.length ? pool.primary : pool.backup;
-  if (!list.length) return null;
+  let list = pool.primary.length ? pool.primary : pool.backup;
+  // Later games skip the gentle warm-up level (as long as there is something else to ask).
+  if (g.minLevel && list.some((q) => q.level >= g.minLevel)) list = list.filter((q) => q.level >= g.minLevel);
   const target = targetLevel(g.levels, g.idx, g.n);
   const last = g.lastLevel || 0;
-  const available = [...new Set(list.map((q) => q.level))];
   const rank = (l) => (l === target ? 0 : l >= last && l < target ? target - l : l > target ? 10 + l - target : 20 + last - l);
+
+  // Sometimes the AI uses what it has noticed about the players instead (see dynamic.js).
+  const dyn = room.settings.clues !== false ? dynamicCandidates(room, g, activeIds, ctx) : [];
+  if (dyn.length && wantDynamic(room, g, list.length)) {
+    const usable = dyn.filter((d) => d.level === target); // keeps the slow climb in creepiness
+    if (usable.length) {
+      const best = Math.min(...usable.map((d) => rank(d.level) + seenScore(room, d.id, activeIds) * 3 + d.weightPenalty));
+      return { dynamic: pick(usable.filter((d) => rank(d.level) + seenScore(room, d.id, activeIds) * 3 + d.weightPenalty === best)) };
+    }
+  }
+  if (!list.length) return dyn.length ? { dynamic: pick(dyn) } : null;
+  const available = [...new Set(list.map((q) => q.level))];
   const level = available.sort((a, b) => rank(a) - rank(b))[0];
-  const scored = list.filter((q) => q.level === level).map((q) => ({ q, m: mapQuestion(room, g, q, activeIds) }));
-  const min = Math.min(...scored.map((s) => s.m.score));
-  return pick(scored.filter((s) => s.m.score === min));
+  // Prefer questions fewer of these players have already seen (on any device, in any room).
+  const scored = list.filter((q) => q.level === level).map((q) => {
+    const m = mapQuestion(room, g, q, activeIds);
+    return { q, m, s: m.score + seenScore(room, q.id, activeIds) * 40 };
+  });
+  const min = Math.min(...scored.map((x) => x.s));
+  return pick(scored.filter((x) => x.s === min));
+}
+
+/** Mix in "the AI noticed something" questions: spaced out, and only a share of the game. */
+function wantDynamic(room, g, poolLeft) {
+  const done = g.dynCount || 0;
+  const share = room.deck ? 0.25 : 0.4;
+  const max = Math.max(1, Math.round(g.n * share));
+  if (done >= max) return poolLeft === 0;
+  if (g.lastDynamic === g.idx - 1) return poolLeft === 0; // never two in a row
+  if (g.idx === 0) return false; // warm up first
+  const left = g.n - g.idx;
+  const need = max - done;
+  return need >= left || random() < (room.deck ? 0.3 : 0.45);
 }
 
 // ---------------------------------------------------------------------------
@@ -213,7 +302,10 @@ export function startGame(room, ctx) {
   const pool = questionPool(room);
   if (!pool.total) return { ok: false, error: 'no-questions' };
   const rounds = ROUND_CHOICES.includes(room.settings.rounds) ? room.settings.rounds : 10;
-  const levelSource = pool.primary.length ? pool.primary : pool.backup;
+  let levelSource = pool.primary.length ? pool.primary : pool.backup;
+  // Everyone is warmed up after the first game: from game 2 on, no level-1 questions.
+  const minLevel = room.gamesPlayed > 0 && levelSource.some((q) => q.level > 1) ? 2 : 0;
+  if (minLevel) levelSource = levelSource.filter((q) => q.level >= minLevel);
   room.gamesPlayed++;
   room.game = {
     id: uid(8),
@@ -221,6 +313,9 @@ export function startGame(room, ctx) {
     n: Math.min(rounds, pool.total),
     idx: 0,
     phase: 'answer',
+    minLevel,
+    dynCount: 0,
+    dynCats: {},
     levels: [...new Set(levelSource.map((q) => q.level))].sort((a, b) => a - b),
     scores: Object.fromEntries(active.map((p) => [p.id, 0])),
     featured: {},
@@ -242,13 +337,31 @@ function hardTimer(room, phase, ms, ctx, extra = 0) {
 function beginQuestion(room, ctx) {
   const g = room.game;
   const activeIds = activePlayers(room).map((p) => p.id);
-  const choice = chooseQuestion(room, g, activeIds);
+  const choice = chooseQuestion(room, g, activeIds, ctx);
   if (!choice) return finishGame(room, ctx, 'out-of-questions');
-  const { q, m } = choice;
+  let q;
+  let m;
+  let kind;
+  if (choice.dynamic) {
+    const d = choice.dynamic;
+    q = { id: d.id, level: d.level, text: d.text };
+    m = { named: d.bind, wild: {} };
+    kind = 'clue';
+    g.dynCount = (g.dynCount || 0) + 1;
+    g.dynCats = g.dynCats || {};
+    g.dynCats[d.cat] = (g.dynCats[d.cat] || 0) + 1;
+    g.lastDynamic = g.idx;
+  } else {
+    ({ q, m } = choice);
+    kind = q.id[0] === 's' ? 'generic' : 'deck';
+  }
   room.used.push(q.id);
+  markSeen(room, q.id, activeIds);
   const byId = Object.fromEntries(room.players.map((p) => [p.id, p]));
   const segments = renderSegments(q.text, m, byId);
   const about = [...new Set(segments.filter((s) => s.t === 'p').map((s) => s.pid))];
+  // improv = a deck question about someone the deck knows nothing about (a player nobody matched to a deck name)
+  if (kind === 'deck' && about.some((pid) => !Object.values(room.assign).includes(pid))) kind = 'improv';
   for (const pid of about) g.featured[pid] = (g.featured[pid] || 0) + 1;
   g.lastAbout = about;
   g.lastLevel = q.level;
@@ -264,13 +377,17 @@ function beginQuestion(room, ctx) {
     participants: activeIds,
     answerers,
     startedAt: ctx.now,
-    generic: q.id[0] === 's',
+    generic: kind === 'generic',
+    kind,
+    cat: choice.dynamic ? choice.dynamic.cat : null,
+    hint: choice.dynamic ? choice.dynamic.hint || null : null,
   };
   g.phase = 'answer';
   g.answers = {};
   g.drafts = {};
   g.options = null;
   g.votes = {};
+  g.voteDrafts = {};
   g.voters = [];
   g.ready = [];
   g.stalled = false;
@@ -296,6 +413,8 @@ function beginVote(room, ctx) {
   g.options = shuffle(answered.map((pid) => ({ oid: uid(6), pid, text: g.answers[pid].text })));
   g.voters = g.q.participants.filter((p) => isActive(room, p) && g.options.some((o) => o.pid !== p));
   g.votes = {};
+  g.voteDrafts = {};
+  g.autoVotes = [];
   const lim = limits(room);
   g.timer = lim ? hardTimer(room, 'vote', lim.vote, ctx, 600 + g.options.length * DEAL_MS) : null;
   g.phase = 'vote';
@@ -303,8 +422,22 @@ function beginVote(room, ctx) {
   if (!g.voters.length) beginResults(room, ctx);
 }
 
+/** A picked-but-not-locked answer counts as a vote when time runs out. */
+function collectVotes(room) {
+  const g = room.game;
+  for (const pid of g.voters) {
+    const oid = g.voteDrafts && g.voteDrafts[pid];
+    const opt = oid && g.options.find((o) => o.oid === oid);
+    if (!g.votes[pid] && opt && opt.pid !== pid && isActive(room, pid)) {
+      g.votes[pid] = oid;
+      (g.autoVotes ||= []).push(pid);
+    }
+  }
+}
+
 function beginResults(room, ctx) {
   const g = room.game;
+  collectVotes(room);
   const entries = g.options.map((o) => ({ oid: o.oid, pid: o.pid, text: o.text, votes: [], points: 0 }));
   const votePairs = [];
   for (const [voter, oid] of Object.entries(g.votes)) {
@@ -315,6 +448,13 @@ function beginResults(room, ctx) {
     e.points += pts;
     votePairs.push([voter, e.pid]);
   }
+  // No vote, no points: if you could have voted and didn't, your own answer's points don't count.
+  for (const e of entries) {
+    if (g.voters.includes(e.pid) && !g.votes[e.pid] && e.points > 0) {
+      e.forfeit = e.points;
+      e.points = 0;
+    }
+  }
   const before = { ...g.scores };
   for (const e of entries) g.scores[e.pid] = (g.scores[e.pid] || 0) + e.points;
   g.result = {
@@ -323,6 +463,7 @@ function beginResults(room, ctx) {
     after: { ...g.scores },
     missingAnswers: g.q.answerers.filter((p) => isActive(room, p) && !g.answers[p]),
     missingVotes: g.voters.filter((p) => isActive(room, p) && !g.votes[p]),
+    autoVotes: (g.autoVotes || []).slice(),
   };
   const order = Object.entries(g.answers).filter(([, a]) => !a.auto).sort((a, b) => a[1].at - b[1].at).map(([pid]) => pid);
   g.history.push({
@@ -477,10 +618,52 @@ export function setDraft(room, pid, text, qkey) {
   return true;
 }
 
-/** Hard time limits: called by the host every half second. Returns true if anything changed. */
+/** Remember which answer a player picked (not locked in yet), so a time-out can count it. */
+export function setVoteDraft(room, pid, oid, qkey) {
+  const g = room.game;
+  if (!g || g.phase !== 'vote' || (qkey && qkey !== g.q.key) || !g.voters.includes(pid)) return false;
+  const opt = g.options.find((o) => o.oid === oid);
+  if (oid && (!opt || opt.pid === pid)) return false;
+  g.voteDrafts = g.voteDrafts || {};
+  if (oid) g.voteDrafts[pid] = oid;
+  else delete g.voteDrafts[pid];
+  return true;
+}
+
+/** Stop the clock (e.g. while the host itself is offline, nobody can submit anything). */
+export function pauseTimer(room, ms) {
+  const g = room.game;
+  if (!g || !g.timer || ms <= 0) return false;
+  g.timer.endsAt += ms;
+  if (g.timer.start) g.timer.start += ms;
+  return true;
+}
+
+/** Who we're still waiting for in the current answer/vote phase. */
+export function missingNow(room) {
+  const g = room.game;
+  if (!g) return [];
+  if (g.phase === 'answer') return g.q.answerers.filter((p) => isActive(room, p) && !g.answers[p] && !(g.drafts && g.drafts[p]));
+  if (g.phase === 'vote') return g.voters.filter((p) => isActive(room, p) && !g.votes[p] && !(g.voteDrafts && g.voteDrafts[p]));
+  return [];
+}
+
+/**
+ * Hard time limits: called by the host every half second. Returns true if anything changed.
+ * ctx.flaky = players whose connection dropped in the last few seconds: if time runs
+ * out on them, the clock waits a little so a network blip never costs anyone their turn.
+ */
 export function tick(room, ctx) {
   const g = room.game;
   if (!g || !g.timer || !g.timer.hard || ctx.now < g.timer.endsAt + GRACE_MS) return false;
+  const flaky = ctx.flaky ? missingNow(room).filter((p) => ctx.flaky.has(p)) : [];
+  if (flaky.length && (g.timer.extra || 0) < EXTRA_MAX_MS) {
+    g.timer.extra = (g.timer.extra || 0) + EXTRA_STEP_MS;
+    g.timer.endsAt = ctx.now + EXTRA_STEP_MS - GRACE_MS;
+    g.timer.waiting = flaky;
+    room.seq++;
+    return true;
+  }
   if (g.phase === 'answer') {
     collectDrafts(room, ctx);
     if (Object.keys(g.answers).length) beginVote(room, ctx);
@@ -496,9 +679,42 @@ export function tick(room, ctx) {
 }
 
 // ---------------------------------------------------------------------------
+// Host hand-over
+
+/**
+ * Another device takes over hosting (the old host vanished). Running clocks are
+ * restarted with what was left (at least 20 seconds), so nobody loses their turn.
+ * ctx.snapAt = when the backup was taken, on the old host's clock.
+ */
+export function promote(room, newHostPid, ctx) {
+  const p = getPlayer(room, newHostPid);
+  if (!p || p.gone) return false;
+  for (const x of room.players) x.isHost = x.id === newHostPid;
+  room.prevHosts = [...new Set([...(room.prevHosts || []), room.hostPid])];
+  room.hostPid = newHostPid;
+  room.epoch = (room.epoch || 0) + 1;
+  room.seq += 1000; // devices never take an older state over a newer one
+  const g = room.game;
+  if (g && g.timer) {
+    const snapAt = ctx.snapAt || ctx.now;
+    const remaining = g.timer.endsAt - snapAt;
+    g.timer.endsAt = ctx.now + Math.max(remaining, 20000);
+    g.timer.start = ctx.now + Math.max(0, (g.timer.start || 0) - snapAt);
+  }
+  room.handover = { from: room.prevHosts[room.prevHosts.length - 1], to: newHostPid, at: ctx.now };
+  return true;
+}
+
+/** The host moved to another device while this one was away: this one is a player now. */
+export function demotedIdentity(room, pid = room.hostPid) {
+  const p = getPlayer(room, pid);
+  return p ? { pid: p.id, secret: p.secret, roomId: room.roomId, code: room.code } : null;
+}
+
+// ---------------------------------------------------------------------------
 // Actions
 
-const HOST_ONLY = new Set(['settings', 'deck', 'clearDeck', 'assign', 'kick', 'start', 'timer', 'moveOn', 'skipQuestion', 'next', 'endGame', 'playAgain', 'resetUsed']);
+const HOST_ONLY = new Set(['settings', 'deck', 'clearDeck', 'assign', 'kick', 'start', 'timer', 'moveOn', 'skipQuestion', 'next', 'endGame', 'playAgain', 'resetUsed', 'admit', 'deny']);
 
 /**
  * Apply an action from player `pid`. Mutates `room`.
@@ -556,7 +772,7 @@ function applyInner(room, pid, action, ctx) {
       const s = room.settings;
       const a = action.settings || {};
       if (ROUND_CHOICES.includes(a.rounds)) s.rounds = a.rounds;
-      for (const k of ['subjectAnswers', 'showMeter', 'fillStarter']) if (typeof a[k] === 'boolean') s[k] = a[k];
+      for (const k of ['subjectAnswers', 'fillStarter', 'clues']) if (typeof a[k] === 'boolean') s[k] = a[k];
       if (a.timeLimit in TIME_LIMITS) s.timeLimit = a.timeLimit;
       return { ok: true };
     }
@@ -590,6 +806,13 @@ function applyInner(room, pid, action, ctx) {
     }
     case 'kick':
       return removePlayer(room, action.pid, 'kicked', ctx);
+    case 'admit':
+    case 'deny': {
+      const r = (room.requests || []).find((x) => x.joinId === action.joinId);
+      if (!r || r.status !== 'waiting') return { ok: false, error: 'stale' };
+      r.status = action.type === 'admit' ? 'admitted' : 'denied';
+      return { ok: true };
+    }
     case 'start':
     case 'playAgain':
       if (g && g.phase !== 'final') return { ok: false, error: 'in-game' };
@@ -658,9 +881,13 @@ export function viewFor(room, pid, ctx) {
     seq: room.seq,
     me: pid,
     hostPid: room.hostPid,
+    epoch: room.epoch || 0,
+    greet: room.greet && ctx.now - room.greet.at < 15000 ? room.greet : null,
+    handover: room.handover && ctx.now - room.handover.at < 20000 ? room.handover : null,
     players: activePlayers(room).map((p) => publicPlayer(p, ctx)),
-    settings: { rounds: room.settings.rounds, showMeter: room.settings.showMeter, subjectAnswers: room.settings.subjectAnswers, timeLimit: room.settings.timeLimit || 'off' },
+    settings: { rounds: room.settings.rounds, subjectAnswers: room.settings.subjectAnswers, timeLimit: room.settings.timeLimit || 'off' },
     gamesPlayed: room.gamesPlayed,
+    hasDeck: !!room.deck,
     wins: room.wins || {},
     game: null,
   };
@@ -677,10 +904,10 @@ export function viewFor(room, pid, ctx) {
   // Totals stay secret during the last round — the podium reveals them.
   if (!(gv.isLast && g.phase !== 'final')) gv.scores = g.scores;
   if (g.q) {
-    gv.q = { key: g.q.key, level: g.q.level, segments: g.q.segments, about: g.q.about, participants: g.q.participants, answerers: g.q.answerers, generic: !!g.q.generic };
+    gv.q = { key: g.q.key, id: g.q.id, level: g.q.level, segments: g.q.segments, about: g.q.about, participants: g.q.participants, answerers: g.q.answerers, generic: !!g.q.generic, kind: g.q.kind || (g.q.generic ? 'generic' : 'deck'), cat: g.q.cat || null };
   }
   if (g.timer && (g.phase === 'answer' || g.phase === 'vote')) {
-    gv.timer = { remaining: g.timer.endsAt - ctx.now, total: g.timer.total || TIMER_MS, hard: !!g.timer.hard, startsIn: Math.max(0, (g.timer.start || 0) - ctx.now) };
+    gv.timer = { remaining: g.timer.endsAt - ctx.now, total: g.timer.total || TIMER_MS, hard: !!g.timer.hard, startsIn: Math.max(0, (g.timer.start || 0) - ctx.now), extra: g.timer.extra || 0, waiting: g.timer.waiting || null };
   }
   if (g.phase === 'answer') {
     gv.answered = Object.keys(g.answers).filter((p) => g.q.answerers.includes(p));
@@ -693,6 +920,7 @@ export function viewFor(room, pid, ctx) {
     gv.voters = g.voters.filter((p) => isActive(room, p));
     gv.voted = Object.keys(g.votes);
     gv.myVote = g.votes[pid] || null;
+    gv.myPick = (g.voteDrafts && g.voteDrafts[pid]) || null;
   }
   if (g.phase === 'results') {
     gv.result = gv.isLast ? { ...g.result, before: null, after: null } : g.result;
@@ -724,8 +952,17 @@ export function hostInfo(room) {
       predicted: room.deck.predicted.map((x) => ({ ...x, pid: isActive(room, room.assign[x.key]) ? room.assign[x.key] : null, uses: refCount[x.key] || 0 })),
     };
   }
+  const activeIds = activePlayers(room).map((p) => p.id);
+  const builtin = { total: STARTER.length, fresh: 0, seen: 0 };
+  for (const q of STARTER) {
+    if (room.used.includes(q.id)) continue;
+    if (seenScore(room, q.id, activeIds) > 0) builtin.seen++;
+    else builtin.fresh++;
+  }
   return {
     deck,
+    builtin,
+    requests: (room.requests || []).filter((r) => r.status === 'waiting'),
     pool: { deck: pool.deck.length, starter: pool.starter.length, total: pool.total, byLevel },
     usedCount: room.used.length,
     settings: room.settings,

@@ -39,9 +39,9 @@ export async function startWorld() {
     base: `http://127.0.0.1:${httpPort}/`,
     broker,
     /** extra: e.g. 'rtc=off' to simulate a network where WebRTC can't connect (VPN, strict NAT). */
-    query: (extra = '') => `signal=http://127.0.0.1:${world.signal.port}/&ice=none&nosw=1&relay=ws://127.0.0.1:${broker.port}${extra ? '&' + extra : ''}`,
-    async device(name, { width = 420, height = 860, context } = {}) {
-      const ctx = context || (await browser.newContext({ viewport: { width, height } }));
+    query: (extra = '') => `signal=http://127.0.0.1:${world.signal.port}/&ice=none&nosw=1&geo=off&relay=ws://127.0.0.1:${broker.port}${extra ? '&' + extra : ''}`,
+    async device(name, { width = 420, height = 860, scale = 1, context } = {}) {
+      const ctx = context || (await browser.newContext({ viewport: { width, height }, deviceScaleFactor: scale }));
       const page = await ctx.newPage();
       page.on('pageerror', (e) => errors.push(`[${name}] ${e.message}`));
       page.on('console', (m) => m.type() === 'error' && !/WebSocket connection|ERR_CONNECTION_REFUSED/.test(m.text()) && errors.push(`[${name}] ${m.text()}`));
@@ -146,6 +146,11 @@ export async function joinRoom(world, code, name, opts = {}) {
   await p.goto(world.base + `?room=${code}&` + world.query(opts.net));
   await p.getByTestId('name-input').fill(name);
   await tap(p, 'join-go');
+  // Mid-game joins (and taking back a seat) wait for the host's OK.
+  if (opts.admitBy) {
+    await opts.admitBy.getByTestId('admit').waitFor({ timeout: 20000 });
+    await tap(opts.admitBy, 'admit');
+  }
   await until(() => state(p, (c) => c && c.welcomed && !!c.view), 20000);
   return p;
 }

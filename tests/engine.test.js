@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 import * as E from '../js/game/engine.js';
 import { parseDeck, TEMPLATE_DECK } from '../js/game/deck.js';
 import { setRandom, seeded } from '../js/game/util.js';
+import { dynamicCandidates } from '../js/game/dynamic.js';
 
 setRandom(seeded('tests'));
 
 function setup(names = ['Host', 'Ann', 'Bob', 'Cid']) {
   const room = E.createRoom({ code: '1234', host: { name: names[0], avatar: '🦄' } });
+  room.settings.clues = false; // dynamic "clue" questions have their own tests
   for (const n of names.slice(1)) assert.ok(E.addPlayer(room, { name: n, avatar: '🐸' }).ok);
   const ids = Object.fromEntries(room.players.map((p) => [p.name, p.id]));
   const online = new Set(room.players.map((p) => p.id));
@@ -32,13 +34,13 @@ function playRound(t, answerFor = (n) => `answer of ${n}`) {
   assert.equal(g.phase, 'results');
 }
 
-test('names must be unique and room caps at 16', () => {
+test('names must be unique and room caps at 30', () => {
   const t = setup();
   assert.equal(E.addPlayer(t.room, { name: 'ann' }).error, 'name-taken');
-  for (let i = 0; i < 12; i++) assert.ok(E.addPlayer(t.room, { name: 'P' + i }).ok);
+  for (let i = 0; i < 26; i++) assert.ok(E.addPlayer(t.room, { name: 'P' + i }).ok);
   assert.equal(E.addPlayer(t.room, { name: 'Late' }).error, 'room-full');
   const colors = new Set(t.room.players.map((p) => p.color));
-  assert.equal(colors.size, 16, 'every player gets a distinct color');
+  assert.equal(colors.size, 30, 'every player gets a distinct color');
 });
 
 test('full game: scoring gives 2 points for the subject vote, 1 otherwise', () => {
@@ -363,4 +365,138 @@ test('built-in questions are flagged so the AI can "struggle"', () => {
   const t = setup();
   t.act('Host', { type: 'start' });
   assert.equal(E.viewFor(t.room, t.ids.Ann, t.ctx).game.q.generic, true);
+});
+
+test('no vote, no points: a player who could vote but did not loses their own points', () => {
+  const t = setup();
+  t.act('Host', { type: 'start' });
+  const g = t.room.game;
+  for (const n of t.names) if (g.q.answerers.includes(t.ids[n])) t.act(n, { type: 'answer', text: 'a ' + n, qkey: g.q.key });
+  const annOpt = g.options.find((o) => o.pid === t.ids.Ann);
+  // everyone except Ann votes for Ann
+  for (const n of ['Host', 'Bob', 'Cid']) t.act(n, { type: 'vote', oid: annOpt.oid, qkey: g.q.key });
+  assert.ok(t.act('Host', { type: 'moveOn' }).ok);
+  const e = g.result.entries.find((x) => x.pid === t.ids.Ann);
+  assert.ok(e.forfeit > 0, 'points were forfeited');
+  assert.equal(e.points, 0);
+  assert.equal(g.scores[t.ids.Ann], 0);
+});
+
+test('a picked but not locked vote is counted when time runs out', () => {
+  const t = setup();
+  t.room.settings.timeLimit = 'fast';
+  t.act('Host', { type: 'start' });
+  const g = t.room.game;
+  for (const n of t.names) if (g.q.answerers.includes(t.ids[n])) t.act(n, { type: 'answer', text: 'a ' + n, qkey: g.q.key });
+  const pick = g.options.find((o) => o.pid !== t.ids.Ann);
+  assert.ok(E.setVoteDraft(t.room, t.ids.Ann, pick.oid, g.q.key));
+  assert.equal(E.setVoteDraft(t.room, t.ids.Ann, g.options.find((o) => o.pid === t.ids.Ann).oid, g.q.key), false, 'not your own');
+  t.ctx.now = g.timer.endsAt + 5000;
+  assert.ok(E.tick(t.room, t.ctx));
+  assert.equal(g.phase, 'results');
+  assert.equal(g.votes[t.ids.Ann], pick.oid);
+  assert.deepEqual(g.result.autoVotes, [t.ids.Ann]);
+});
+
+test('a time limit waits (a little) for players whose connection just dropped', () => {
+  const t = setup();
+  t.room.settings.timeLimit = 'fast';
+  t.act('Host', { type: 'start' });
+  const g = t.room.game;
+  t.act('Ann', { type: 'answer', text: 'hi', qkey: g.q.key });
+  t.ctx.now = g.timer.endsAt + 2000;
+  t.ctx.flaky = new Set([t.ids.Bob]);
+  assert.ok(E.tick(t.room, t.ctx));
+  assert.equal(g.phase, 'answer', 'still answering');
+  assert.deepEqual(g.timer.waiting, [t.ids.Bob]);
+  for (let i = 0; i < 10 && g.phase === 'answer'; i++) {
+    t.ctx.now = g.timer.endsAt + 2000;
+    E.tick(t.room, t.ctx);
+  }
+  assert.equal(g.phase, 'vote', 'but never forever');
+  const before = g.timer.endsAt;
+  E.pauseTimer(t.room, 7000);
+  assert.equal(g.timer.endsAt, before + 7000);
+});
+
+test('from the second game on there are no level-1 questions', () => {
+  const t = setup();
+  t.room.settings.rounds = 5;
+  t.act('Host', { type: 'start' });
+  t.act('Host', { type: 'endGame' });
+  t.act('Host', { type: 'start' });
+  const g = t.room.game;
+  const levels = [];
+  for (let r = 0; r < 5; r++) {
+    levels.push(g.q.level);
+    playRound(t);
+    t.act('Host', { type: 'next' });
+  }
+  assert.ok(levels.every((l) => l >= 2), 'levels ' + levels);
+});
+
+test('another device can take over hosting with the game intact', () => {
+  const t = setup();
+  t.room.settings.timeLimit = 'normal';
+  t.act('Host', { type: 'start' });
+  const g = t.room.game;
+  t.act('Ann', { type: 'answer', text: 'kept', qkey: g.q.key });
+  const snap = JSON.parse(JSON.stringify(t.room));
+  const seq = snap.seq;
+  assert.ok(E.promote(snap, t.ids.Bob, { now: 5_000_000, snapAt: t.ctx.now }));
+  assert.equal(snap.hostPid, t.ids.Bob);
+  assert.equal(snap.epoch, 1);
+  assert.ok(snap.seq > seq + 500);
+  assert.ok(snap.players.find((p) => p.id === t.ids.Bob).isHost);
+  assert.ok(!snap.players.find((p) => p.id === t.ids.Host).isHost);
+  assert.equal(snap.game.answers[t.ids.Ann].text, 'kept');
+  assert.ok(snap.game.timer.endsAt - 5_000_000 >= 20000, 'clock restarted with time left');
+  assert.deepEqual(E.demotedIdentity(snap, t.ids.Host).pid, t.ids.Host);
+});
+
+test('a disconnected player can get their seat back by name; mid-game joins need the host', () => {
+  const t = setup();
+  t.act('Host', { type: 'start' });
+  const online = new Set([t.ids.Host, t.ids.Bob]);
+  assert.equal(E.seatByName(t.room, { name: 'ANN ' }, online).id, t.ids.Ann);
+  assert.equal(E.seatByName(t.room, { name: 'Bob' }, online), null, 'Bob is online: not claimable');
+  assert.ok(E.inGame(t.room));
+  const r = E.requestJoin(t.room, { joinId: 'j1', name: 'Dee', avatar: '🐸' }, t.ctx);
+  assert.equal(r.status, 'waiting');
+  assert.equal(E.hostInfo(t.room).requests.length, 1);
+  assert.ok(t.act('Host', { type: 'admit', joinId: 'j1' }).ok);
+  assert.equal(r.status, 'admitted');
+  assert.equal(t.act('Ann', { type: 'admit', joinId: 'j1' }).error, 'host-only');
+});
+
+test('clue questions: built from device clues, only when the condition holds, capped per category', () => {
+  const t = setup(['Host', 'Ann', 'Bob', 'Cid', 'Dee']);
+  const us = { country: 'US', countryName: 'the US', os: 'Android', device: 'phone', lang: 'en-US', langs: ['en-US'] };
+  for (const n of t.names) t.room.signals[t.ids[n]] = { ...us };
+  t.room.signals[t.ids.Cid] = { ...us, country: 'AR', countryName: 'Argentina', os: 'iOS' };
+  t.room.settings.clues = true;
+  t.act('Host', { type: 'start' });
+  const g = t.room.game;
+  g.idx = 2;
+  const c = dynamicCandidates(t.room, g, t.room.players.map((p) => p.id), t.ctx);
+  const ids = c.map((x) => x.id);
+  assert.ok(ids.includes('xplace-odd-country'), ids.join(','));
+  assert.ok(ids.includes('xdev-only-iphone'));
+  const q = c.find((x) => x.id === 'xplace-odd-country');
+  assert.deepEqual(q.bind, { p1: t.ids.Cid });
+  assert.ok(q.text.includes('Argentina') && q.text.includes('the US'), q.text);
+  assert.ok(!c.some((x) => x.id === 'xlang-odd'), 'everyone has the same language: no language question');
+  g.dynCats = { place: 2 };
+  assert.ok(!dynamicCandidates(t.room, g, t.room.players.map((p) => p.id), t.ctx).some((x) => x.cat === 'place'), 'category cap');
+});
+
+test('questions other players already played elsewhere are avoided', () => {
+  const t = setup();
+  const pool = E.questionPool(t.room);
+  // Everyone has seen every built-in question except one level-1 question.
+  const keep = pool.primary.find((q) => q.level === 1);
+  for (const n of t.names) t.room.seenBy[t.ids[n]] = Object.fromEntries(pool.primary.filter((q) => q !== keep).map((q) => [q.id, 2]));
+  t.act('Host', { type: 'start' });
+  assert.equal(t.room.game.q.id, keep.id);
+  assert.ok(E.seenScore(t.room, keep.id, Object.values(t.ids)) > 0, 'now marked as seen');
 });

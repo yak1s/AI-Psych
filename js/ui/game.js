@@ -1,13 +1,13 @@
 import { html, useState, useEffect, useRef, useMemo } from '../vendor/preact-htm.js';
-import { Btn, Avatar, Meter, QuestionText, TimerRing, Confirm, Modal, Doodle, cx, playerMap, useStep, useOnKey, useNow } from './common.js';
+import { Btn, Avatar, QuestionText, TimerRing, Confirm, Modal, Doodle, cx, playerMap, useStep, useOnKey, useNow } from './common.js';
 import { wash } from './art.js';
 import { ANSWER_MAX } from '../game/engine.js';
-import { levelInfo } from '../game/deck.js';
 import { seen, markSeen, session } from '../storage.js';
 import { sfx, buzz, haptic } from './audio.js';
 import { WaitChat } from './chat.js';
-import { seeded } from '../game/util.js';
-import { AI_LINES, GENERIC_LINES, WRITE_QUIPS, WRITE_CREEPY, VOTE_QUIPS, VOTE_CREEPY, pickLines } from './lines.js';
+import { seeded, hash } from '../game/util.js';
+import { AI_LINES, GENERIC_LINES, IMPROV_LINES, OUT_OF_FILE_LINES, CLUE_LINES, WRITE_QUIPS, WRITE_CREEPY, VOTE_QUIPS, VOTE_CREEPY, pickLines } from './lines.js';
+import { PlayersPanel } from './people.js';
 
 // ---------------------------------------------------------------------------
 // The "AI is writing a question" theatre
@@ -36,11 +36,20 @@ export function AiIntro({ view, onDone }) {
   const who = playerMap(view);
   const level = g.q.level;
   const name = g.q.about.length ? who(g.q.about[0]).name : 'everyone';
-  const generic = g.q.generic;
+  const kind = g.q.kind || (g.q.generic ? 'generic' : 'deck');
+  const generic = kind === 'generic';
   const lines = useMemo(() => {
     const rand = seeded(g.q.key);
-    const pool = generic ? GENERIC_LINES : AI_LINES[level] || AI_LINES[1];
-    return pickLines(pool, 3, rand).map((l) => l.replace(/\{name\}/g, name));
+    let picked;
+    if (kind === 'clue') {
+      // "I noticed something" — the category says what it was looking at.
+      const cat = CLUE_LINES[g.q.cat] || CLUE_LINES.any;
+      picked = [...pickLines(view.hasDeck ? CLUE_LINES.any : CLUE_LINES.nodeck, 1, rand), ...pickLines(cat, 2, rand)];
+    } else if (kind === 'improv') picked = pickLines(IMPROV_LINES, 3, rand);
+    else if (generic && view.hasDeck) picked = [...pickLines(OUT_OF_FILE_LINES, 1, rand), ...pickLines(GENERIC_LINES, 2, rand)];
+    else if (generic) picked = pickLines(GENERIC_LINES, 3, rand);
+    else picked = pickLines(AI_LINES[level] || AI_LINES[1], 3, rand);
+    return picked.map((l) => l.replace(/\{name\}/g, name));
   }, [g.q.key]);
   const step = useStep(lines.length, 850, { key: g.q.key, delay: 350 });
   useEffect(() => {
@@ -56,7 +65,7 @@ export function AiIntro({ view, onDone }) {
   }, [step]);
   return html`<div class="card ai-intro enter" onClick=${onDone} data-testid="ai-intro">
     ${g.idx === 0 && g.number > 1 && html`<div class="new-game-banner" data-testid="new-game-banner">🎉 Game ${g.number} — fresh scores! (The AI remembers everything, though.)</div>`}
-    <div class="ai-title">🤖 ${generic ? 'The AI is trying to write' : 'The AI is writing'} question ${g.idx + 1}/${g.n}<span class="dots"></span></div>
+    <div class="ai-title">🤖 ${generic ? 'The AI is trying to write' : kind === 'clue' ? 'The AI noticed something — question' : 'The AI is writing'} ${kind === 'clue' ? '' : 'question '}${g.idx + 1}/${g.n}<span class="dots"></span></div>
     <${Bot} level=${level} />
     <div class="ai-lines">
       ${lines.slice(0, step).map((l, i) => html`<div key=${i} class=${level >= 4 && i === lines.length - 1 ? 'creep' : ''}>${l}</div>`)}
@@ -71,17 +80,21 @@ export function QuestionCard({ view, animate = true, compact }) {
   const g = view.game;
   const who = playerMap(view);
   const aboutMe = g.q.about.includes(view.me);
-  const info = levelInfo(g.q.level);
   return html`<div class=${cx('card q-card', !compact && 'tilt-l')} data-testid="question">
     <div class="tape"></div>
     <div class="q-meta">
       <span class="q-num">Q ${g.idx + 1}/${g.n}</span>
-      ${view.settings.showMeter && html`<${Meter} level=${g.q.level} />`}
+      ${g.q.id && html`<span class="q-code" title="Question code">${questionCode(g.q.id)}</span>`}
     </div>
     <${QuestionText} segments=${g.q.segments} who=${who} animate=${animate} compact=${compact} />
-    ${view.settings.showMeter && !compact && html`<div class="script muted" style="margin-top:8px">${info.emoji} ${info.name}</div>`}
     ${aboutMe && !compact && html`<div class="about-you">👀 This one's about YOU — your vote counts double!</div>`}
   </div>`;
+}
+
+/** A short code for every question: B = built in, D = from the deck, AI = built from clues. */
+export function questionCode(id) {
+  const kind = { s: 'B', d: 'D', x: 'AI' }[id[0]] || 'Q';
+  return `#${kind}-${(id[0] === 'x' ? hash(id) : id.slice(1)).slice(0, 5).toUpperCase()}`;
 }
 
 function timerEnd(view) {
@@ -143,6 +156,9 @@ export function AnswerPhase({ ctrl, view }) {
   const [text, setText] = useState(() => session.get(draftKey, ''));
   useOnKey(g.q.key, () => setText(session.get(draftKey, '')));
   const [editing, setEditing] = useState(false);
+  // How this answer was typed (speed, deletions) — the AI likes to notice things.
+  const typing = useRef({ key: null, shown: 0, first: 0, dels: 0 });
+  if (typing.current.key !== g.q.key) typing.current = { key: g.q.key, shown: Date.now(), first: 0, dels: 0 };
   const endsAt = timerEnd(view);
   const now = useNow(500, !!endsAt);
   const expired = endsAt && now >= endsAt;
@@ -185,7 +201,9 @@ export function AnswerPhase({ ctrl, view }) {
   const submit = () => {
     const t = text.trim();
     if (!t) return;
-    ctrl.dispatch({ type: 'answer', text: t, qkey: g.q.key });
+    const ty = typing.current;
+    const now = Date.now();
+    ctrl.dispatch({ type: 'answer', text: t, qkey: g.q.key, meta: { ms: now - ty.shown, typeMs: ty.first ? now - ty.first : 0, chars: t.length, dels: ty.dels } });
     session.del(draftKey);
     setEditing(false);
     sfx('submit');
@@ -215,12 +233,14 @@ export function AnswerPhase({ ctrl, view }) {
         : html`<div class="card center"><p class="script" style="font-size:26px;margin:0">Sit back — everyone is writing about you 😈</p></div>`}
       <${Progress} n=${doneCount} total=${total} label="answered" />
       <${StatusList} view=${view} ids=${g.q.answerers} done=${g.answered} doneText="answered!" waitText="writing…" />
-      ${g.stalled
+      ${g.timer && g.timer.waiting && g.timer.waiting.length
+        ? html`<p class="quip" data-testid="waiting-reconnect">📡 Giving ${g.timer.waiting.map((p) => who(p).name).join(' & ')} a few extra seconds to reconnect…</p>`
+        : g.stalled
         ? html`<p class="quip">⏰ Nobody wrote anything! The host is deciding what's next…</p>`
         : expired
           ? html`<p class="quip">${hard ? "⏰ Time's up! Collecting whatever everyone wrote…" : "⏰ Time's up! The host decides who we wait for…"}</p>`
           : html`<${Quips} pool=${WRITE_QUIPS} creepy=${g.q.level >= 4 && !g.q.generic ? WRITE_CREEPY : null} slow=${slow} />`}
-      <${WaitChat} ctrl=${ctrl} view=${view} scope=${g.q.key} />
+      <${WaitChat} ctrl=${ctrl} view=${view} scope=${g.q.key} label=${`Q${g.idx + 1} · waiting for answers`} />
     </div>`;
   }
 
@@ -234,7 +254,15 @@ export function AnswerPhase({ ctrl, view }) {
       <label class="script" for="answer" style="font-size:24px;font-weight:700">Your answer</label>
       <textarea id="answer" class="notebook" maxlength=${ANSWER_MAX} rows="3" placeholder="Something hilarious… or suspiciously true"
         value=${text} data-testid="answer-input"
-        onInput=${(e) => { const v = e.currentTarget.value; setText(v); session.set(draftKey, v); pushDraft(v); }}
+        onInput=${(e) => {
+          const v = e.currentTarget.value;
+          const ty = typing.current;
+          if (!ty.first) ty.first = Date.now();
+          if (v.length < text.length) ty.dels += text.length - v.length;
+          setText(v);
+          session.set(draftKey, v);
+          pushDraft(v);
+        }}
         onBlur=${() => text && pushDraft(text, true)}
         onKeyDown=${(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}></textarea>
       <div class="row" style="justify-content:space-between">
@@ -256,8 +284,14 @@ export function VotePhase({ ctrl, view }) {
   const dealKey = 'deal.' + g.q.key;
   const [skipDeal] = useState(() => seen(dealKey));
   const shown = useStep(g.options.length, 650, { key: g.q.key, skip: skipDeal, delay: 500 });
-  const [sel, setSel] = useState(null);
-  useOnKey(g.q.key, () => setSel(null));
+  const [sel, setSelRaw] = useState(g.myPick || null);
+  useOnKey(g.q.key, () => setSelRaw(g.myPick || null));
+  // What I picked (not locked yet) goes to the host: if time runs out, it counts as my vote.
+  const setSel = (oid) => {
+    setSelRaw(oid);
+    ctrl.sendVoteDraft && ctrl.sendVoteDraft(oid, g.q.key);
+  };
+  const dealtAt = useRef(0);
   useEffect(() => {
     if (shown > 0 && !skipDeal) sfx('card');
     if (shown >= g.options.length) markSeen(dealKey);
@@ -287,11 +321,12 @@ export function VotePhase({ ctrl, view }) {
   }, [sel, g.myVote]);
   useEffect(() => {
     if (dealt && !skipDeal && canVote) haptic('select');
+    if (dealt && !dealtAt.current) dealtAt.current = Date.now();
   }, [dealt]);
 
   const lock = () => {
     if (!sel) return;
-    ctrl.dispatch({ type: 'vote', oid: sel, qkey: g.q.key });
+    ctrl.dispatch({ type: 'vote', oid: sel, qkey: g.q.key, meta: { ms: dealtAt.current ? Date.now() - dealtAt.current : 0 } });
     sfx('stamp');
     haptic('success');
   };
@@ -303,6 +338,8 @@ export function VotePhase({ ctrl, view }) {
     ${canVote && !voted && (isJudge
       ? html`<div class="judge-banner">⚖️ You're the judge! Your vote is worth <b>2 points</b></div>`
       : html`<h2 class="center" style="font-size:26px">Pick your favorite!</h2>`)}
+    ${canVote && !voted && g.options.some((o) => o.mine) && html`<p class="vote-rule" data-testid="no-vote-no-points">🗳️ <b>No vote, no points:</b> if you don't vote, your own answer scores nothing this round.</p>`}
+    ${canVote && !voted && hard && html`<p class="muted small center" style="margin:0">Picked one but time runs out? It counts as your vote.</p>`}
     ${!canVote && html`<div class="card center"><p class="script" style="font-size:24px;margin:0">${hasChoice ? 'Watch the others vote 👀' : 'Only your answer is in — nothing to vote on this time!'}</p></div>`}
     <div class="options" role="radiogroup">
       ${g.options.slice(0, shown).map((o, i) => {
@@ -329,7 +366,7 @@ export function VotePhase({ ctrl, view }) {
       ${expired
         ? html`<p class="quip">${hard ? "⏰ Time's up! Counting the votes…" : "⏰ Time's up! Waiting on the host…"}</p>`
         : html`<${Quips} pool=${VOTE_QUIPS} creepy=${g.q.level >= 4 && !g.q.generic ? VOTE_CREEPY : null} slow=${slow} />`}
-      <${WaitChat} ctrl=${ctrl} view=${view} scope=${g.q.key} />
+      <${WaitChat} ctrl=${ctrl} view=${view} scope=${g.q.key} label=${`Q${g.idx + 1} · waiting for votes`} />
     </div>`}
   </div>`;
 }
@@ -343,6 +380,7 @@ export function HostDock({ ctrl, view }) {
   const [confirm, setConfirm] = useState(null);
   const [dismissed, setDismissed] = useState(null);
   const [menu, setMenu] = useState(false);
+  const [people, setPeople] = useState(false);
   const endsAt = timerEnd(view);
   const now = useNow(500, !!endsAt);
   const expired = endsAt && now >= endsAt;
@@ -385,10 +423,12 @@ export function HostDock({ ctrl, view }) {
           : expired && missing.length && !hard
             ? html`<${Btn} small color="tangerine" onClick=${() => setDismissed(null)} testid="move-on-open">⏭ Move on<span class="long">…</span><//>`
             : html`<${Btn} small color="paper" sound="tap" onClick=${() => ctrl.dispatch({ type: 'timer', on: false })}>${Doodle.cross({ size: 18 })} Stop<span class="long"> timer</span><//>`}
-        <${Btn} small color="coral" onClick=${() => setConfirm('skip')} testid="skip-question">${Doodle.skip({ size: 20 })} Skip<span class="long"> question</span><//>
+        <${Btn} small color="tangerine" onClick=${() => setConfirm('end-phase')} testid="end-phase" title=${phase === 'answer' ? 'End writing and start voting' : 'End voting and show the results'}>⏭ ${phase === 'answer' ? 'Vote now' : 'Results'}<//>
+        <${Btn} small color="coral" onClick=${() => setConfirm('skip')} testid="skip-question" title="Skip question">${Doodle.skip({ size: 20 })}<span class="long"> Skip</span><//>
       `}
+      <${Btn} small color="sky" sound="tap" onClick=${() => setPeople(true)} testid="players-btn" title="Players">👥<span class="long"> Players</span><//>
       ${phase === 'results' && html`<${Btn} small color="mint" onClick=${() => ctrl.dispatch({ type: 'next' })} testid="force-next">Next<span class="long"> anyway</span> ▶<//>`}
-      <${Btn} small color="paper" sound="tap" onClick=${() => setConfirm('end')}>End<span class="long"> game</span><//>
+      <${Btn} small color="paper" sound="tap" onClick=${() => setConfirm('end')} title="End game">🏁<span class="long"> End</span><//>
     </div>
     ${showTimesUp &&
     html`<${Modal} onClose=${() => setDismissed(expiredKey)} title="⏰ Time's up!">
@@ -398,7 +438,7 @@ export function HostDock({ ctrl, view }) {
         ? noneSubmitted
           ? "Whatever they've typed so far will be used. If nobody typed anything, the AI writes a new question."
           : "Whatever they've typed so far is sent for them (they can still vote)."
-        : 'Move on and their votes will be left out.'}</p>
+        : "Picked-but-not-locked votes count. Anyone who didn't vote gets no points for their own answer this round."}</p>
       <div class="stack" style="gap:10px">
         <${Btn} block color="tangerine" onClick=${moveOn} testid="confirm-move-on">Move on without ${missing.length === 1 ? who(missing[0]).name : 'them'}<//>
         <div class="row" style="gap:8px;justify-content:center">
@@ -415,6 +455,13 @@ export function HostDock({ ctrl, view }) {
         <${Btn} block color="sky" onClick=${() => { setDismissed('stalled' + g.q.key); startTimer(60); }}>Give everyone 60 more seconds<//>
       </div>
     <//>`}
+    ${people && html`<${PlayersPanel} ctrl=${ctrl} view=${view} onClose=${() => setPeople(false)} />`}
+    ${confirm === 'end-phase' &&
+    html`<${Confirm} title=${phase === 'answer' ? 'End writing now?' : 'End voting now?'}
+      text=${phase === 'answer'
+        ? `Whatever people have typed so far is sent for them${missing.length ? ` (still writing: ${missing.map((p) => who(p).name).join(', ')})` : ''}, and voting starts.`
+        : `Picked-but-not-locked votes count. Anyone who didn't vote${missing.length ? ` (${missing.map((p) => who(p).name).join(', ')})` : ''} gets no points for their own answer.`}
+      yes=${phase === 'answer' ? 'Start voting' : 'Show results'} onNo=${() => setConfirm(null)} onYes=${moveOn} />`}
     ${confirm === 'skip' &&
     html`<${Confirm} title="Skip this question?" text="Everyone's answers are thrown away and the AI writes a brand-new question for this round." yes="Skip it"
       onNo=${() => setConfirm(null)} onYes=${() => { setConfirm(null); ctrl.dispatch({ type: 'skipQuestion' }); sfx('whistleDown'); }} />`}

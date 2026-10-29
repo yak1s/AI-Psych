@@ -5,11 +5,14 @@ import { Home, HostSetup, JoinForm, Knocking, Ended, HowToPlay } from './home.js
 import { PlayerLobby, HostLobby } from './lobby.js';
 import { AnswerPhase, VotePhase, HostDock } from './game.js';
 import { ResultsPhase, FinalPhase } from './results.js';
-import { NetCheck } from './netcheck.js';
+import { Greeting, JoinRequests, HandoverNote } from './people.js';
+import { remind, notifyState, enableNotify, disableNotify } from './notify.js';
+import { fullscreenSupported, fullscreenWanted, setFullscreen } from './fullscreen.js';
+import { trackAway } from '../signals.js';
 import { HostController } from '../host-controller.js';
 import { PlayerController } from '../player-controller.js';
 import { sfx, isMuted, setMuted, onMuteChange } from './audio.js';
-import { local, session, KEYS } from '../storage.js';
+import { local, session, KEYS, recordSeen } from '../storage.js';
 
 // ---------------------------------------------------------------------------
 // Backdrop: big watercolor blooms whose palette darkens as questions get creepier
@@ -133,6 +136,50 @@ function TopBar({ ctrl, view, onMenu, onHome }) {
   </header>`;
 }
 
+function MenuToggles() {
+  const [, bump] = useReducer((x) => x + 1, 0);
+  const ns = notifyState();
+  return html`<div class="stack" style="gap:8px">
+    ${ns !== 'unsupported' &&
+    html`<${Btn} block color=${ns === 'on' ? 'mint' : 'paper'} sound="tap" testid="notify-toggle"
+      onClick=${async () => { if (ns === 'on') disableNotify(); else await enableNotify(); bump(); }}>
+      🔔 Reminders: ${ns === 'on' ? 'on' : ns === 'blocked' ? 'blocked in browser settings' : 'off'}
+    <//>`}
+    ${fullscreenSupported() &&
+    html`<${Btn} block color=${fullscreenWanted() ? 'mint' : 'paper'} sound="tap" onClick=${() => { setFullscreen(!fullscreenWanted()); bump(); }}>
+      ⛶ Full screen: ${fullscreenWanted() ? 'on' : 'off'}
+    <//>`}
+  </div>`;
+}
+
+/** Nudge players (notification + blinking tab) when it's their turn and they're elsewhere. */
+function useReminders(ctrl, view) {
+  const g = view && view.game;
+  const me = view && view.me;
+  const key = g ? g.phase + ':' + (g.q ? g.q.key : '') : null;
+  useEffect(() => {
+    if (!g || !ctrl || ctrl.ended) return;
+    if (g.phase === 'answer' && g.q.answerers.includes(me) && !g.myAnswer) {
+      const t = setTimeout(() => remind('🤖 New question!', `Question ${g.idx + 1} of ${g.n} is waiting for your answer.`, 'turn'), 4500);
+      return () => clearTimeout(t);
+    }
+    if (g.phase === 'vote' && g.voters.includes(me) && !g.myVote) remind('🗳️ Time to vote!', "Pick your favorite answer — no vote, no points for yours.", 'turn');
+    if (g.phase === 'results') remind('📊 The results are in!', 'See who wrote what.', 'turn');
+    if (g.phase === 'final') remind('🏆 And the winner is…', 'The final scores are out!', 'turn');
+  }, [key]);
+  // Time running out on you, or everybody's waiting just for you
+  const waitingOnMe =
+    g &&
+    ((g.phase === 'answer' && g.q.answerers.includes(me) && !g.myAnswer) ||
+      (g.phase === 'vote' && g.voters.includes(me) && !g.myVote) ||
+      (g.phase === 'results' && g.ready && !g.ready.includes(me) && view.players.filter((p) => p.online && !g.ready.includes(p.id)).length === 1));
+  useEffect(() => {
+    if (!waitingOnMe) return;
+    const t = setTimeout(() => remind('⏰ Everyone is waiting for you!', 'Come back to the game 👀', 'nudge'), 20000);
+    return () => clearTimeout(t);
+  }, [waitingOnMe, key]);
+}
+
 function GameScreen({ ctrl, view }) {
   const g = view.game;
   if (!g) return ctrl.isHost ? html`<${HostLobby} ctrl=${ctrl} view=${view} />` : html`<${PlayerLobby} view=${view} />`;
@@ -162,6 +209,26 @@ export function App({ boot }) {
     const old = ctrlRef.current;
     if (old && old !== c && old.stop) old.stop();
     ctrlRef.current = c;
+    if (c && c instanceof PlayerController) {
+      // The host vanished and this device is next in line: it becomes the host.
+      c.onPromote = (backup) => {
+        const h = HostController.fromBackup(backup, c.identity.pid, rerender);
+        if (!h) return;
+        h.toast = { info: true, text: "The host disappeared — you're hosting now so the game can go on! 👑", at: Date.now() };
+        claimHost(h);
+        setCtrl(h);
+      };
+    }
+    if (c && c instanceof HostController) {
+      // Another device took over hosting while this one was away: carry on as a player.
+      c.onDemote = (identity) => {
+        local.set(KEYS.player, { ...identity, savedAt: Date.now() });
+        session.set(KEYS.role, { role: 'player', code: identity.code });
+        const p = PlayerController.resume(rerender);
+        if (p) p.toast = { info: true, text: 'While you were away, someone else took over hosting. You are still in the game!', at: Date.now() };
+        setCtrl(p);
+      };
+    }
     rerender();
   };
 
@@ -210,6 +277,24 @@ export function App({ boot }) {
   }, [mood]);
   useWakeLock(!!(view && view.game));
 
+  // Leaving the page mid-game is noticed (the AI may ask about it…)
+  useEffect(() => {
+    trackAway((ms) => {
+      const c = ctrlRef.current;
+      const g = c && !c.ended && c.view && c.view.game;
+      if (g && g.phase !== 'final' && c.sendInfo) c.sendInfo({ awayMs: ms });
+    });
+  }, []);
+
+  // Every question this device sees is remembered, so nobody gets it again in a later game.
+  const qid = view && view.game && view.game.q ? view.game.q.id : null;
+  useEffect(() => {
+    if (qid) recordSeen(qid);
+  }, [qid]);
+
+  // Reminders when the game is in the background.
+  useReminders(ctrl, view);
+
   const phaseKey = view && view.game ? view.game.phase + ':' + (view.game.q ? view.game.q.key : '') : view ? 'lobby' : null;
   const [splash, setSplash] = useState(null);
   const lastPhase = useRef(phaseKey);
@@ -240,10 +325,8 @@ export function App({ boot }) {
   } else if (ctrl && view) {
     content = html`<${GameScreen} ctrl=${ctrl} view=${view} />`;
   } else if (ctrl && !ctrl.isHost) {
-    content = html`<${Knocking} code=${ctrl.identity.code} status=${ctrl.status} since=${knockSince.current}
+    content = html`<${Knocking} code=${ctrl.identity.code} status=${ctrl.status} since=${knockSince.current} holding=${ctrl.holding}
       onCancel=${() => { setCtrl(null); session.del(KEYS.role); setJoinCode(''); setMode('join'); }} />`;
-  } else if (mode === 'netcheck') {
-    content = html`<${NetCheck} onClose=${() => setMode('home')} />`;
   } else if (mode === 'host-setup') {
     content = html`<${HostSetup} onBack=${() => setMode('home')} onCreate=${(profile) => {
       const c = HostController.create(profile, rerender);
@@ -261,7 +344,7 @@ export function App({ boot }) {
   } else {
     content = html`<${Home}
       resumeHost=${hostSaved} resumePlayer=${playerSaved}
-      onHost=${() => setMode('host-setup')} onJoin=${() => setMode('join')} onCheck=${() => setMode('netcheck')}
+      onHost=${() => setMode('host-setup')} onJoin=${() => setMode('join')}
       onResumeHost=${() => { const c = HostController.resume(rerender); claimHost(c); setCtrl(c); }}
       onResumePlayer=${() => { knockSince.current = Date.now(); setCtrl(PlayerController.resume(rerender)); }}
       onForgetHost=${() => { local.del(KEYS.host); rerender(); }}
@@ -287,12 +370,16 @@ export function App({ boot }) {
       onHome=${() => (ctrl && !ctrl.ended ? setMenu(true) : goHome())} />
     ${content}
     ${ctrl && !ctrl.ended && html`<${NetBanner} ctrl=${ctrl} view=${view} />`}
+    ${ctrl && !ctrl.ended && view && html`<${Greeting} view=${view} />`}
+    ${ctrl && !ctrl.ended && view && html`<${HandoverNote} view=${view} />`}
+    ${ctrl && !ctrl.ended && ctrl.isHost && view && html`<${JoinRequests} ctrl=${ctrl} view=${view} />`}
     <${Toast} toast=${ctrl && ctrl.toast} />
     <${Splash} trigger=${splash} color=${mood >= 4 ? 'plum' : 'grape'} />
     ${menu &&
     html`<${Modal} onClose=${() => setMenu(false)} title="Menu">
       <div class="stack" style="gap:10px">
         <${Btn} block color="sky" sound="tap" onClick=${() => { setMenu(false); setRules(true); }}>How to play<//>
+        <${MenuToggles} />
         <${Btn} block color="coral" onClick=${() => setConfirmLeave(true)} testid="leave-room">${ctrl && ctrl.isHost ? 'Close the room' : 'Leave the room'}<//>
         <${Btn} block color="paper" sound="tap" onClick=${() => setMenu(false)}>Back to the game<//>
       </div>

@@ -158,8 +158,9 @@ test('host timer needs confirmation, skip question, kick and late join', { timeo
   assert.equal(res.missingAnswers.length, 1);
 
   // A late joiner plays from the next question; a kicked player is told so.
-  const cid = await joinRoom(world, code, 'Cid').catch(() => null);
-  assert.ok(cid, 'late joiner got in');
+  const cid = await joinRoom(world, code, 'Cid', { admitBy: host }).catch(() => null);
+  assert.ok(cid, 'late joiner got in (after the host said yes)');
+  await ann.getByTestId('greeting').waitFor({ timeout: 10000 }); // everyone says hi
   await tap(host, 'force-next');
   await cid.getByTestId('answer-form').waitFor({ timeout: 20000 });
   const bobId = await state(bob, (c) => c.pid);
@@ -289,4 +290,57 @@ test('waiting-room chat only reaches people who are waiting, with reactions; vot
   assert.equal(await ann.getByTestId('lock-nudge').count(), 0);
   await ann.getByTestId('lock-nudge').waitFor({ timeout: 9000 });
   for (const p of [host, ann, bob, cid]) await p.context().close();
+});
+
+test('the host vanishes mid-game: the next device takes over, nobody loses their turn, the old host comes back as a player', { timeout: 180000 }, async () => {
+  const opts = { net: 'takeover=6000' };
+  const { host, code } = await hostRoom(world, 'Hosty', opts);
+  const ann = await joinRoom(world, code, 'Ann', opts);
+  const bob = await joinRoom(world, code, 'Bob', opts);
+  await host.getByRole('radio', { name: 'Normal', exact: true }).click({ force: true });
+  await tap(host, 'start-game');
+  for (const p of [ann, bob]) await p.getByTestId('answer-input').waitFor({ timeout: 20000 });
+  await ann.getByTestId('answer-input').fill('written before the host vanished');
+  await tap(ann, 'submit-answer');
+  // Ann (first in line) holds a backup of the game.
+  await until(() => ann.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('aipsych.backup') || 'null');
+    return !!(b && b.rank === 0 && b.room && b.room.game);
+  }), 20000);
+  await sleep(1500);
+
+  // The host's phone goes dark for a long time.
+  await host.evaluate(() => window.__aipsych.current.net.simulateOutage(40000));
+  await until(() => state(ann, (c) => c.isHost === true), 40000);
+  assert.equal(await state(ann, (c) => c.room.epoch), 1);
+  // Bob finds the new host by himself; Ann's answer survived; the clock was restarted.
+  await until(async () => (await state(ann, (c) => c.net.onlinePids())).length >= 1, 30000);
+  await until(() => state(bob, (c) => c.welcomed && c.view && c.view.hostPid === c.view.players.find((p) => p.name === 'Ann').id), 30000);
+  assert.ok(await state(ann, (c) => Object.values(c.room.game.answers).some((a) => a.text === 'written before the host vanished')));
+  assert.ok(await state(ann, (c) => c.room.game.timer.endsAt - Date.now() > 10000), 'time left to answer');
+  await bob.getByTestId('handover').waitFor({ timeout: 10000 });
+  await bob.getByTestId('answer-input').fill('answered to the new host');
+  await tap(bob, 'submit-answer');
+  await until(() => state(ann, (c) => Object.values(c.room.game.answers).some((a) => a.text === 'answered to the new host')), 20000);
+
+  // The old host comes back: it notices it was replaced and rejoins as a normal player.
+  await until(() => state(host, (c) => c && !c.isHost && c.welcomed), 70000);
+  assert.equal(await state(host, (c) => c.view.hostPid === c.pid), false);
+  await until(async () => (await state(ann, (c) => c.net.onlinePids())).length === 2, 20000);
+  for (const p of [host, ann, bob]) await p.context().close();
+});
+
+test('lost your phone? Join with the same name on another device and get your seat back', { timeout: 120000 }, async () => {
+  const { host, code } = await hostRoom(world);
+  const ann = await joinRoom(world, code, 'Ann');
+  const bob = await joinRoom(world, code, 'Bob');
+  await tap(host, 'start-game');
+  const bobId = await state(bob, (c) => c.pid);
+  await bob.context().close();
+  await until(async () => (await onlineCount(host)) === 1, 30000);
+  const bob2 = await joinRoom(world, code, 'Bob', { admitBy: host });
+  assert.equal(await state(bob2, (c) => c.pid), bobId, 'same seat as before');
+  await ann.getByTestId('greeting').waitFor({ timeout: 10000 });
+  assert.equal(await state(host, (c) => c.room.players.filter((p) => !p.gone).length), 3, 'no duplicate player');
+  for (const p of [host, ann, bob2]) await p.context().close();
 });

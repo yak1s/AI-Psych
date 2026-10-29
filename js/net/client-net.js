@@ -7,7 +7,7 @@
 // each path reconnects on its own without interrupting the other.
 
 import { Peer } from '../vendor/peer.js';
-import { peerOptions, hostPeerId, APP_ID, TIMING, relayBrokers, relayTopic, rtcEnabled } from '../config.js';
+import { peerOptions, hostPeerId, epochTag, APP_ID, TIMING, relayBrokers, relayTopic, rtcEnabled } from '../config.js';
 import { uid } from '../game/util.js';
 import { Relay } from './mqtt.js';
 import { cryptoReady, newKeyPair, exportPublic, deriveShared, seal, unseal, plain, unplain } from './secure.js';
@@ -19,10 +19,16 @@ export class ClientNet {
    * @param {() => void} o.onOpen          a path to the host is open (send hello now)
    * @param {(msg) => void} o.onMessage
    * @param {(status, detail) => void} o.onStatus  'connecting' | 'connected' | 'reconnecting' | 'host-missing' | 'unsupported'
+   * @param {number} [o.epoch]            which host generation we know about (hosting can move to another device)
+   * @param {() => string} [o.roomId]     the room's secret id (to trust "the host moved" announcements)
+   * @param {(epoch) => void} [o.onEpoch] hosting moved to another device
    */
   constructor(o) {
     this.o = o;
     this.code = o.code;
+    this.epoch = o.epoch || 0;
+    this.tryEpoch = this.epoch; // the host address we're dialing (cycles forward if the host vanished)
+    this.startedAt = Date.now();
     this.chan = uid(16); // identifies this device's link on both transports
     this.peer = null;
     this.conn = null;
@@ -98,6 +104,30 @@ export class ClientNet {
     return this.rtcOpen ? 'direct' : this.relayOpen ? 'relay' : 'none';
   }
 
+  /** When the host last actually said something (a connection that opens but stays silent doesn't count). */
+  get lastHeard() {
+    return Math.max(this.lastMsg || 0, this.startedAt);
+  }
+
+  /** Since when this device itself has had working internet (a relay broker or the signaling server). */
+  get onlineSince() {
+    return this.netOkSince || null;
+  }
+
+  /** Hosting moved to another device: follow it. */
+  adopt(epoch) {
+    if (!(epoch > this.epoch)) return;
+    this.epoch = epoch;
+    this.tryEpoch = epoch;
+    this.lastMsg = Date.now(); // a new host just announced itself: it's alive
+    if (this.conn && this.conn._epoch !== epoch) this._closeConn();
+    this.hostPub = null;
+    this.retry = 0;
+    this._relayHandshake(true);
+    this._schedule(50);
+    this.o.onEpoch && this.o.onEpoch(epoch);
+  }
+
   send(msg) {
     if (this._dark()) return false;
     if (this.rtcOpen) {
@@ -150,6 +180,7 @@ export class ClientNet {
 
   _message(msg) {
     if (!msg || typeof msg !== 'object') return;
+    this.lastMsg = Date.now();
     this._check();
     if (msg.t === 'who') return this.o.onOpen(); // host doesn't know this link yet
     if (msg.t !== 'ping' && msg.t !== 'pong') this.o.onMessage(msg);
@@ -197,8 +228,12 @@ export class ClientNet {
       if (peer !== this.peer || this.stopped) return;
       const type = err && err.type;
       if (type === 'peer-unavailable') {
-        // host isn't registered right now (refreshing? offline?) — keep trying
-        if (!this.open) this._setStatus('host-missing');
+        // host isn't registered right now (refreshing? offline? or hosting moved to another
+        // device) — keep trying, alternating with the next host addresses
+        if (!this.open) {
+          this._setStatus('host-missing');
+          this.tryEpoch = this.tryEpoch >= this.epoch + 2 ? this.epoch : this.tryEpoch + 1;
+        }
         if (this.conn && !this.rtcUp) this._fail(this.conn);
         else this._schedule();
       } else if (type === 'unavailable-id') {
@@ -220,11 +255,12 @@ export class ClientNet {
     if (!this.open) this._setStatus(this.retry ? 'reconnecting' : 'connecting');
     let conn;
     try {
-      conn = peer.connect(hostPeerId(this.code), { reliable: true, serialization: 'json', metadata: { chan: this.chan } });
+      conn = peer.connect(hostPeerId(this.code, this.tryEpoch), { reliable: true, serialization: 'json', metadata: { chan: this.chan } });
     } catch {
       return this._schedule();
     }
     if (!conn) return this._schedule();
+    conn._epoch = this.tryEpoch;
     this.conn = conn;
     this.rtcUp = false;
     const timeout = setTimeout(() => {
@@ -236,6 +272,7 @@ export class ClientNet {
       this.rtcUp = true;
       this.lastRtc = Date.now();
       this.retry = 0;
+      if (conn._epoch > this.epoch) this.adopt(conn._epoch);
       this._check();
       this.o.onOpen(); // a brand-new path: (re)introduce ourselves on it
     });
@@ -295,6 +332,7 @@ export class ClientNet {
       (up) => up && this._relayHandshake(true),
     );
     this.relay.subscribe(relayTopic('c', this.chan, 'down'));
+    this.relay.subscribe(relayTopic('r', this.code, 'epoch'));
     this._relayHandshake(true);
   }
 
@@ -315,6 +353,14 @@ export class ClientNet {
     try {
       if (kind === 0) {
         const m = unplain(body);
+        const roomId = this.o.roomId && this.o.roomId();
+        if (m.t === 'epoch') {
+          // Someone who's in the room can check the announcement; a brand-new joiner just follows the newest host.
+          if (m.epoch > this.epoch && (!roomId || m.tag === epochTag(roomId, m.epoch))) this.adopt(m.epoch);
+          return;
+        }
+        if (m.t === 'hs' && !roomId && (m.epoch || 0) > this.epoch) this.adopt(m.epoch);
+        if (m.t === 'hs' && (m.epoch || 0) !== this.epoch) return; // an old host, or a new one we haven't verified yet
         if (m.t === 'hs' && typeof m.pub === 'string' && m.pub !== this.hostPub) {
           this.key = await deriveShared(this.kp, m.pub);
           this.hostPub = m.pub;
@@ -365,6 +411,9 @@ export class ClientNet {
   _heartbeat() {
     if (this.stopped) return;
     const now = Date.now();
+    const netOk = !this._dark() && ((this.relay && this.relay.up) || (this.peer && this.peer.open));
+    if (!netOk) this.netOkSince = null;
+    else if (!this.netOkSince) this.netOkSince = now;
     if (this.rtcUp && now - this.lastRtc > TIMING.deadAfter) this._fail(this.conn);
     // No relay handshake yet, or the relay went quiet (host refreshed?): (re)introduce ourselves.
     if (this.relay && (!this.key || now - this.lastRelay > TIMING.deadAfter)) this._relayHandshake(false);

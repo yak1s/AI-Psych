@@ -5,7 +5,13 @@
 import { uid } from './game/util.js';
 import { PROTOCOL } from './game/engine.js';
 import { ClientNet } from './net/client-net.js';
-import { local, session, KEYS } from './storage.js';
+import { takeoverMs } from './config.js';
+import { local, session, KEYS, seenQuestions } from './storage.js';
+import { unpack } from './net/secure.js';
+import { signals, onSignals } from './signals.js';
+
+// If the host can't be reached for takeoverMs() (25s), the first device in line takes over
+// hosting; the second one waits a bit longer, in case the first one is gone too.
 
 export class PlayerController {
   /** Start a brand-new join. */
@@ -39,6 +45,7 @@ export class PlayerController {
     // Anything not yet acknowledged is re-sent every few seconds (the host ignores duplicates),
     // so an answer sent into a silent network hiccup is never lost.
     this._resend = setInterval(() => {
+      this._watchHost();
       if (!this.welcomed || this.ended) return;
       const now = Date.now();
       for (const item of this.pending) {
@@ -48,11 +55,61 @@ export class PlayerController {
         }
       }
     }, 1000);
+    this._offSignals = onSignals((dev) => this.welcomed && this.net.send({ t: 'info', dev }));
+  }
+
+  /** The host is gone for good? If this device is next in line, take over hosting. */
+  _watchHost() {
+    if (this.ended || !this.identity.pid || !this.onPromote) return;
+    if (this.welcomed && this.net.open) return;
+    const b = this._backup();
+    if (!b || b.rank < 0 || b.room.roomId !== this.identity.roomId) return;
+    if (this.net.epoch > (b.room.epoch || 0)) return; // someone already took over: just find them
+    const now = Date.now();
+    if (now - b.recvAt > 30 * 60000) return; // too old to trust
+    if (now - this.net.lastHeard < takeoverMs() * (1 + b.rank * 1.2)) return;
+    // Only if *this* device has internet (otherwise it's us who's lost, not the host).
+    const since = this.net.onlineSince;
+    if (!since || now - since < 10000) return;
+    this.onPromote(b);
+  }
+
+  _backup() {
+    if (this._backupCache === undefined) this._backupCache = local.get(KEYS.backup);
+    return this._backupCache;
+  }
+
+  async _storeBackup(m) {
+    try {
+      if (m.t === 'backup-deck') {
+        local.set(KEYS.backupDeck, { sig: m.sig, deck: await unpack(m.deck) });
+        return;
+      }
+      if (m.rank < 0) {
+        const b = this._backup();
+        if (b) {
+          b.rank = -1;
+          local.set(KEYS.backup, b);
+        }
+        return;
+      }
+      const b = { rank: m.rank, at: m.at, recvAt: Date.now(), deckSig: m.deckSig, room: await unpack(m.room) };
+      this._backupCache = b;
+      local.set(KEYS.backup, b);
+    } catch {
+      /* a broken backup is just skipped */
+    }
   }
 
   _startNet() {
     this.net = new ClientNet({
       code: this.identity.code,
+      epoch: this.identity.epoch || 0,
+      roomId: () => this.identity.roomId,
+      onEpoch: (epoch) => {
+        this.identity = { ...this.identity, epoch };
+        if (this.identity.pid) local.set(KEYS.player, { ...this.identity, savedAt: Date.now() });
+      },
       onOpen: () => this._hello(),
       onMessage: (m) => this._message(m),
       onStatus: (s) => {
@@ -83,6 +140,16 @@ export class PlayerController {
     session.set(KEYS.pending, this.pending);
     if (this.welcomed) this.net.send({ t: 'act', id: item.id, a });
     this.emit();
+  }
+
+  /** The answer I picked but haven't locked in (counts if time runs out). */
+  sendVoteDraft(oid, qkey) {
+    this.voteDraft = { t: 'draft', vote: true, oid, qkey };
+    if (this.welcomed) this.net.send(this.voteDraft);
+  }
+
+  sendInfo(msg) {
+    if (this.welcomed) this.net.send({ t: 'info', ...msg });
   }
 
   /** What I'm typing right now — the host submits it for me if time runs out. */
@@ -121,6 +188,7 @@ export class PlayerController {
 
   stop() {
     clearInterval(this._resend);
+    this._offSignals && this._offSignals();
     this.net.stop();
   }
 
@@ -155,12 +223,19 @@ export class PlayerController {
   _message(m) {
     switch (m.t) {
       case 'welcome': {
-        this.identity = { ...this.identity, pid: m.pid, secret: m.secret, roomId: m.roomId, code: m.code };
+        this.identity = { ...this.identity, pid: m.pid, secret: m.secret, roomId: m.roomId, code: m.code, epoch: Math.max(m.epoch || 0, this.identity.epoch || 0) };
         local.set(KEYS.player, { ...this.identity, savedAt: Date.now() });
         session.set(KEYS.role, { role: 'player', code: m.code });
         this.welcomed = true;
+        this.holding = null;
+        if (m.epoch > this.net.epoch) this.net.adopt(m.epoch);
         for (const item of this.pending) this.net.send({ t: 'act', id: item.id, a: item.a });
         if (this.draft) this.net.send(this.draft);
+        if (this.voteDraft) this.net.send(this.voteDraft);
+        if (!this._sentInfo) {
+          this._sentInfo = true;
+          this.net.send({ t: 'info', dev: signals(), seen: seenQuestions() });
+        } else this.net.send({ t: 'info', dev: signals() });
         if (this.chatScope) this.net.send({ t: 'chat-here', scope: this.chatScope });
         this.emit();
         break;
@@ -185,6 +260,17 @@ export class PlayerController {
       case 'chat':
       case 'chat-react':
         this.chatListeners && this.chatListeners.forEach((fn) => fn(m));
+        break;
+      case 'hold':
+        // Mid-game join (or taking back a seat): waiting for the host to say yes.
+        if (!this.holding) {
+          this.holding = { claim: !!m.claim, since: Date.now() };
+          this.emit();
+        }
+        break;
+      case 'backup':
+      case 'backup-deck':
+        this._storeBackup(m);
         break;
       case 'reject':
         this._end(m.reason);

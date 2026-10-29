@@ -1,9 +1,11 @@
 // Waiting-room chat: only while you're on a waiting screen. You only ever get
 // the messages sent while you were here (the host doesn't forward anything else).
+// What you did get stays with you for the rest of the room's games, with markers
+// showing when you were in a waiting room and when you were away.
 
 import { html, useState, useEffect, useRef } from '../vendor/preact-htm.js';
 import { Avatar, cx, playerMap, colorOf } from './common.js';
-import { session } from '../storage.js';
+import { local, KEYS } from '../storage.js';
 import { sfx, buzz } from './audio.js';
 
 const QUICK = ['😂', '❤️', '👍', '😮', '🤣', '🔥', '👀', '😱'];
@@ -19,28 +21,60 @@ function tint(color, a) {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
-export function WaitChat({ ctrl, view, scope }) {
-  const key = 'aipsych.chat.' + scope;
-  const [msgs, setMsgs] = useState(() => session.get(key, []));
+const MAX_ITEMS = 200;
+
+export function WaitChat({ ctrl, view, scope, label = 'Waiting room' }) {
+  const key = `${KEYS.chat}.${view.roomId}.${view.me}`;
+  const [msgs, setMsgs] = useState(() => local.get(key, []));
   const [text, setText] = useState('');
   const [picker, setPicker] = useState(null); // mid with open reaction bar
   const [more, setMore] = useState(false);
   const [open, setOpen] = useState(true);
   const listRef = useRef();
+  const count = msgs.filter((m) => !m.sep).length;
+  // Markers only where they separate actual messages: "you were away" + which waiting room this is.
+  const shown = [];
+  let pendingJoin = null;
+  let away = false;
+  for (const m of msgs) {
+    if (m.sep === 'join') pendingJoin = m;
+    else if (m.sep === 'leave') away = true;
+    else {
+      const any = shown.some((x) => !x.sep);
+      if (pendingJoin && (any || shown.length === 0)) {
+        if (away && any) shown.push({ sep: 'leave', mid: 'a' + pendingJoin.mid });
+        if (any) shown.push(pendingJoin);
+      }
+      pendingJoin = null;
+      away = false;
+      shown.push(m);
+    }
+  }
   const who = playerMap(view);
   const me = view.me;
+
+  const update = (fn) =>
+    setMsgs((list) => {
+      const next = fn(list).slice(-MAX_ITEMS);
+      local.set(key, next);
+      return next;
+    });
 
   // Tell the host we're here (and when we leave), and listen for messages.
   useEffect(() => {
     if (!ctrl.chatPresence) return;
     ctrl.chatPresence(scope);
+    // A marker: from here on you're receiving messages (again).
+    update((list) => {
+      const last = list[list.length - 1];
+      return last && last.sep === 'join' && last.scope === scope ? list : [...list, { sep: 'join', scope, label, at: Date.now(), mid: 'j' + Date.now() }];
+    });
     const off = ctrl.onChatEvent((ev) => {
-      if (ev.scope !== scope) return;
       setMsgs((list) => {
         let next = list;
         if (ev.t === 'chat') {
           if (list.some((m) => m.mid === ev.msg.mid)) return list;
-          next = [...list, { ...ev.msg, reactions: {} }].slice(-80);
+          next = [...list, { ...ev.msg, reactions: {} }].slice(-MAX_ITEMS);
           if (ev.msg.from !== me) {
             sfx('tap');
             buzz(8);
@@ -57,13 +91,16 @@ export function WaitChat({ ctrl, view, scope }) {
           });
           if (ev.from !== me) buzz(6);
         }
-        session.set(key, next);
+        local.set(key, next);
         return next;
       });
     });
     return () => {
       off();
       ctrl.chatPresence(null);
+      const list = local.get(key, []);
+      const last = list[list.length - 1];
+      if (last && last.sep !== 'leave') local.set(key, [...list, { sep: 'leave', at: Date.now(), mid: 'l' + Date.now() }].slice(-MAX_ITEMS));
     };
   }, [scope]);
 
@@ -90,13 +127,16 @@ export function WaitChat({ ctrl, view, scope }) {
 
   return html`<div class="card chat" data-testid="chat">
     <button class="chat-head" onClick=${() => { setOpen(!open); sfx('tap'); }}>
-      <span>💬 Waiting-room chat</span><span class="muted small">${open ? 'hide' : `show${msgs.length ? ` (${msgs.length})` : ''}`}</span>
+      <span>💬 Waiting-room chat</span><span class="muted small">${open ? 'hide' : `show${count ? ` (${count})` : ''}`}</span>
     </button>
     ${open &&
     html`
+      <p class="chat-rule">Only people in a waiting room right now get your messages — and you only get the ones sent while you're here. Earlier rounds stay below.</p>
       <div class="chat-list" ref=${listRef}>
-        ${!msgs.length && html`<p class="muted small center" style="margin:10px 0">Say something while you wait! Only people waiting right now will see it.</p>`}
-        ${msgs.map((m) => {
+        ${!count && html`<p class="muted small center" style="margin:10px 0">Say something while you wait! 👋</p>`}
+        ${shown.map((m) => {
+          if (m.sep === 'join') return html`<div key=${m.mid} class="chat-sep" data-testid="chat-sep">— ${m.label} —</div>`;
+          if (m.sep === 'leave') return html`<div key=${m.mid} class="chat-sep away">🚪 You were away — anything said meanwhile isn't shown</div>`;
           const p = who(m.from);
           const mine = m.from === me;
           const reactions = Object.entries(m.reactions || {});

@@ -35,8 +35,10 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 html { -webkit-text-size-adjust: 100%; }
+html { background-color: var(--paper); overflow-anchor: auto; }
 body {
   min-height: 100vh;
+  background-attachment: scroll;
   min-height: 100dvh;
   background-color: var(--paper);
   background-image: var(--paper-texture);
@@ -56,17 +58,21 @@ h1, h2, h3 { font-family: var(--display); font-weight: 400; margin: 0; line-heig
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ------------------------------------------------------------------ backdrop */
-.backdrop { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.backdrop {
+  position: fixed; top: 0; left: 0; z-index: 0; pointer-events: none; overflow: hidden;
+  /* sized from the screen (set in main.js), so it never jumps when the address bar hides */
+  width: var(--bg-w, 100vw); height: var(--bg-h, 100lvh);
+}
 .backdrop-layer { position: absolute; inset: 0; animation: fade-in 2.4s ease both; }
 .backdrop-layer.out { animation: fade-out 2.4s ease both; }
 .bloom {
-  position: absolute; width: 58vmax; height: 58vmax; background-size: 100% 100%;
+  position: absolute; width: calc(var(--bg-u, 1vmax) * 58); height: calc(var(--bg-u, 1vmax) * 58); background-size: 100% 100%;
   opacity: 0.55; animation: drift 26s ease-in-out infinite alternate; will-change: transform;
 }
-.bloom:nth-child(1) { left: -22vmax; top: -24vmax; }
-.bloom:nth-child(2) { right: -24vmax; top: 18vh; animation-duration: 31s; animation-delay: -8s; }
-.bloom:nth-child(3) { left: -18vmax; bottom: -26vmax; animation-duration: 34s; animation-delay: -15s; }
-.bloom:nth-child(4) { right: -16vmax; bottom: -30vmax; animation-duration: 28s; animation-delay: -4s; width: 44vmax; height: 44vmax; }
+.bloom:nth-child(1) { left: calc(var(--bg-u, 1vmax) * -22); top: calc(var(--bg-u, 1vmax) * -24); }
+.bloom:nth-child(2) { right: calc(var(--bg-u, 1vmax) * -24); top: calc(var(--bg-h, 100vh) * 0.18); animation-duration: 31s; animation-delay: -8s; }
+.bloom:nth-child(3) { left: calc(var(--bg-u, 1vmax) * -18); bottom: calc(var(--bg-u, 1vmax) * -26); animation-duration: 34s; animation-delay: -15s; }
+.bloom:nth-child(4) { right: calc(var(--bg-u, 1vmax) * -16); bottom: calc(var(--bg-u, 1vmax) * -30); animation-duration: 28s; animation-delay: -4s; width: calc(var(--bg-u, 1vmax) * 44); height: calc(var(--bg-u, 1vmax) * 44); }
 .vignette {
   position: absolute; inset: 0;
   background: radial-gradient(ellipse at center, transparent 45%, rgba(40, 18, 60, calc(var(--mood-dark) * 0.5)) 100%);
@@ -76,7 +82,7 @@ body[data-mood='4'] { --mood-dark: 0.55; }
 body[data-mood='5'] { --mood-dark: 1; }
 body[data-mood='5'] .vignette { animation: breathe 5s ease-in-out infinite; }
 
-.scatter { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+.scatter { position: fixed; top: 0; left: 0; width: var(--bg-w, 100vw); height: var(--bg-h, 100lvh); z-index: 0; pointer-events: none; }
 .scatter-item { position: absolute; opacity: 0.32; animation: floaty 12s ease-in-out infinite; transform: rotate(var(--rot)); }
 @media (max-width: 720px) { .scatter-item { opacity: 0.18; } }
 
@@ -399,7 +405,13 @@ body[data-mood='5'] .vignette { animation: breathe 5s ease-in-out infinite; }
 }
 .result.top { box-shadow: 5px 6px 0 var(--ink); }
 .result .ans { font-family: var(--script); font-size: 29px; line-height: 1.1; padding-right: 64px; word-wrap: break-word; }
-.result .author { display: flex; align-items: center; gap: 10px; margin-top: 10px; animation: stamp 0.55s var(--bounce) both; }
+.result .author { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+/* results reveal in place: the card's space is reserved, parts appear stage by stage */
+.result.pending { opacity: 0.35; border-style: dashed; box-shadow: none; animation: none; }
+.result.pending *, .result.s0 .author, .result.s0 .author *, .result.s0 .voters, .result.s0 .voters *, .result.s0 .pts, .result.s0 .forfeit,
+.result.s1 .voters, .result.s1 .voters *, .result.s1 .pts, .result.s1 .forfeit { visibility: hidden; animation: none !important; }
+.result.s1 .author, .result.s2 .author { animation: stamp 0.55s var(--bounce) both; }
+.result.s2 .author { animation: none; }
 .result .author .by { font-family: var(--display); font-size: 17px; }
 .result .pts {
   position: absolute; top: -14px; right: -10px; min-width: 60px; height: 60px; display: grid; place-items: center; font-family: var(--display);
@@ -460,7 +472,7 @@ body.spotlight .spotlight-layer { opacity: 1; }
 .dock {
   position: fixed; left: 50%; bottom: calc(12px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 30;
   display: flex; gap: 8px; align-items: center; padding: 8px 10px; background: var(--card); border: 2.5px solid var(--ink);
-  border-radius: var(--wobble); box-shadow: 4px 5px 0 var(--ink); animation: dock-in 0.6s var(--bounce) both; max-width: calc(100vw - 20px); flex-wrap: wrap; justify-content: center;
+  border-radius: var(--wobble); box-shadow: 4px 5px 0 var(--ink); animation: dock-in 0.6s var(--bounce) both; max-width: calc(100vw - 20px); flex-wrap: nowrap; justify-content: center; white-space: nowrap;
 }
 .dock .lbl { font-family: var(--script); font-size: 18px; padding: 0 4px; color: var(--grape); font-weight: 700; }
 .dock .btn.small { font-size: 15px; padding: 6px 12px; min-height: 40px; gap: 6px; }
@@ -611,3 +623,26 @@ body.spotlight .spotlight-layer { opacity: 1; }
 @keyframes chat-in-right { from { opacity: 0; transform: translateX(24px) scale(0.85); } to { opacity: 1; transform: none; } }
 .nudge-note { margin: 0; text-align: center; font-family: var(--display); font-size: 17px; color: #b3261e; animation: wiggle 0.5s ease-in-out 3; }
 .btn.nudging { animation: shake 0.5s ease 2, pulse-btn 1.2s ease-in-out 1s infinite; }
+
+/* ------------------------------------------------------------------ v5 additions */
+.q-code { font-family: var(--body); font-size: 13px; color: var(--ink-soft); letter-spacing: 1px; }
+.vote-rule { margin: 0; text-align: center; font-size: 17px; padding: 6px 10px; border: 2px dashed var(--ink-faint); border-radius: var(--wobble-2); }
+.forfeit { margin-top: 8px; font-size: 16px; color: #8a3b12; background: rgba(255, 157, 66, 0.18); border-radius: 10px; padding: 4px 8px; }
+.greet-banner {
+  position: fixed; left: 0; right: 0; margin: 0 auto; width: fit-content; top: calc(64px + env(safe-area-inset-top)); z-index: 75;
+  display: flex; align-items: center; gap: 10px; max-width: min(520px, calc(100vw - 32px)); padding: 8px 14px;
+  background: var(--card); border: 2.5px solid var(--ink); border-radius: var(--wobble); box-shadow: 3px 4px 0 var(--ink);
+  font-family: var(--display); font-size: 17px; animation: pop-in 0.5s var(--bounce) both;
+}
+.chat-rule { margin: 0 0 6px; font-size: 14px; color: var(--ink-soft); }
+.chat-sep { align-self: center; text-align: center; font-size: 13px; color: var(--ink-soft); padding: 2px 10px; border-radius: 10px; background: rgba(45, 42, 74, 0.06); }
+.chat-sep.away { background: rgba(255, 123, 107, 0.12); }
+.podium .step.tied { max-width: 240px; flex: 1.4; }
+.podium-people { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+.podium .step.tied .nm { white-space: normal; text-align: center; font-size: 15px; }
+.podium .block .medal { display: block; font-size: 26px; line-height: 1; }
+.ai-form label { display: flex; flex-direction: column; gap: 4px; font-weight: 700; }
+.ai-form label.row { flex-direction: row; }
+.ai-person { display: grid; grid-template-columns: minmax(70px, 0.6fr) 1.6fr auto; gap: 6px; align-items: center; }
+.ai-form .input { font-size: 16px; padding: 6px 10px; }
+.prompt-preview { white-space: pre-wrap; font-size: 12px; max-height: 220px; overflow: auto; background: rgba(45, 42, 74, 0.05); padding: 8px; border-radius: 8px; }

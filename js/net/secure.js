@@ -40,3 +40,25 @@ export async function unseal(key, bytes) {
 
 export const plain = (obj) => te.encode(JSON.stringify(obj));
 export const unplain = (bytes) => JSON.parse(td.decode(bytes));
+
+// Compressed JSON (for the host's backups): gzip + base64 where the browser supports it.
+const b64 = (bytes) => {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+};
+
+export async function pack(obj) {
+  const json = JSON.stringify(obj);
+  if (typeof CompressionStream === 'undefined') return { raw: json };
+  const stream = new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'));
+  return { gz: b64(new Uint8Array(await new Response(stream).arrayBuffer())) };
+}
+
+export async function unpack(p) {
+  if (!p) return null;
+  if (typeof p.raw === 'string') return JSON.parse(p.raw);
+  const bytes = Uint8Array.from(atob(p.gz), (c) => c.charCodeAt(0));
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return JSON.parse(await new Response(stream).text());
+}

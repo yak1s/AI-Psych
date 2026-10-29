@@ -42,7 +42,27 @@ export const KEYS = {
   role: 'aipsych.role',
   pending: 'aipsych.pending',
   view: 'aipsych.view',
+  backup: 'aipsych.backup', // a copy of the game, in case this device has to take over hosting
+  backupDeck: 'aipsych.backupDeck',
+  seenQ: 'aipsych.seenQ', // every question this device has played (any role, any room): {id: times}
+  chat: 'aipsych.chatlog',
+  notify: 'aipsych.notify',
+  fullscreen: 'aipsych.fullscreen',
 };
+
+/** Questions this device has already played, so no one gets the same one twice. */
+export function seenQuestions() {
+  return local.get(KEYS.seenQ, {});
+}
+
+export function recordSeen(id) {
+  if (!id) return;
+  const m = seenQuestions();
+  m[id] = (m[id] || 0) + 1;
+  const keys = Object.keys(m);
+  if (keys.length > 3000) for (const k of keys.slice(0, keys.length - 3000)) delete m[k];
+  local.set(KEYS.seenQ, m);
+}
 
 /** "Seen" flags so animations don't replay after a refresh. */
 export function seen(key) {

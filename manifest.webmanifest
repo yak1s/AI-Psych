@@ -4,7 +4,8 @@
   "description": "The party game where a very curious AI asks questions about you.",
   "start_url": "./",
   "scope": "./",
-  "display": "standalone",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
   "background_color": "#fbf3e4",
   "theme_color": "#fbf3e4",
   "icons": [{ "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]

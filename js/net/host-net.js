@@ -8,7 +8,7 @@
 // other one simply takes over — players don't even see a "reconnecting" blip.
 
 import { Peer } from '../vendor/peer.js';
-import { peerOptions, hostPeerId, TIMING, relayBrokers, relayTopic, rtcEnabled } from '../config.js';
+import { peerOptions, hostPeerId, epochTag, TIMING, relayBrokers, relayTopic, rtcEnabled } from '../config.js';
 import { Relay } from './mqtt.js';
 import { cryptoReady, newKeyPair, exportPublic, deriveShared, seal, unseal, plain, unplain } from './secure.js';
 
@@ -90,10 +90,14 @@ export class HostNet {
    * @param {(pid, msg) => void} o.onDraft
    * @param {(pid, online) => void} o.onPresence
    * @param {(status, detail) => void} o.onStatus
+   * @param {number} [o.epoch]   how many times hosting has moved to another device
+   * @param {string} [o.roomId]
+   * @param {(epoch) => void} [o.onSuperseded]  another device hosts this room now
    */
   constructor(o) {
     this.o = o;
     this.code = o.code;
+    this.epoch = o.epoch || 0;
     this.peer = null;
     this.peerStatus = 'connecting';
     this.relayUp = false;
@@ -212,7 +216,7 @@ export class HostNet {
     this._setPeerStatus('connecting');
     let peer;
     try {
-      peer = new Peer(hostPeerId(this.code), { ...peerOptions(), token: this.o.token });
+      peer = new Peer(hostPeerId(this.code, this.epoch), { ...peerOptions(), token: this.o.token });
     } catch {
       this._setPeerStatus('unsupported');
       return;
@@ -294,8 +298,32 @@ export class HostNet {
     return link;
   }
 
+  /** Is someone hosting this room at `epoch`? Calls back only if a host answers. */
+  probe(epoch, found) {
+    const peer = this.peer;
+    if (!peer || !peer.open || this.stopped) return;
+    let conn;
+    try {
+      conn = peer.connect(hostPeerId(this.code, epoch), { reliable: true, serialization: 'json', metadata: { probe: true } });
+    } catch {
+      return;
+    }
+    if (!conn) return;
+    const t = setTimeout(() => conn.close(), 10000);
+    conn.on('open', () => {
+      clearTimeout(t);
+      conn.close();
+      if (!this.stopped) found(epoch);
+    });
+    conn.on('error', () => clearTimeout(t));
+  }
+
   _accept(conn) {
     const meta = conn.metadata || {};
+    if (meta.probe) {
+      conn.on('open', () => setTimeout(() => conn.close(), 1000));
+      return;
+    }
     const chan = typeof meta.chan === 'string' && meta.chan.length < 64 ? meta.chan : 'rtc-' + conn.connectionId;
     const link = this._link(chan);
     if (link.rtc && link.rtc !== conn) link.dropRtc();
@@ -339,12 +367,29 @@ export class HostNet {
       },
     );
     this.relay.subscribe(relayTopic('r', this.code, 'join'));
+    this.relay.subscribe(relayTopic('r', this.code, 'epoch'));
+  }
+
+  /** Tell everyone (including a previous host that comes back) who hosts the room now. */
+  _announce() {
+    if (!this.relay || !this.o.roomId || !this.epoch) return;
+    const host = this.o.hostPid ? this.o.hostPid() : null;
+    this.relay.publish(relayTopic('r', this.code, 'epoch'), 0, plain({ t: 'epoch', epoch: this.epoch, tag: epochTag(this.o.roomId, this.epoch), host }));
   }
 
   async _relayIn(topic, kind, body) {
     if (this.stopped || this._dark()) return;
     const parts = topic.split('/');
     try {
+      if (parts[parts.length - 1] === 'epoch' && kind === 0) {
+        const m = unplain(body);
+        if (!this.o.roomId || m.tag !== epochTag(this.o.roomId, m.epoch)) return;
+        // A newer host — or (rare) two devices took over at once: the smaller player id keeps it.
+        const me = this.o.hostPid ? this.o.hostPid() : null;
+        const newer = m.epoch > this.epoch || (m.epoch === this.epoch && this.epoch > 0 && m.host && me && m.host < me);
+        if (newer) this.o.onSuperseded && this.o.onSuperseded(m.epoch);
+        return;
+      }
       if (parts[parts.length - 1] === 'join' && kind === 0) {
         // A player wants to talk through the relay: ECDH handshake.
         const req = unplain(body);
@@ -356,7 +401,7 @@ export class HostNet {
           link.hs = { peerPub: req.pub, pub: await exportPublic(kp) };
           this.relay.subscribe(relayTopic('c', req.chan, 'up'));
         }
-        this.relay.publish(relayTopic('c', req.chan, 'down'), 0, plain({ t: 'hs', pub: link.hs.pub }));
+        this.relay.publish(relayTopic('c', req.chan, 'down'), 0, plain({ t: 'hs', pub: link.hs.pub, epoch: this.epoch }));
         return;
       }
       if (kind === 1 && parts[parts.length - 1] === 'up') {
@@ -405,6 +450,9 @@ export class HostNet {
       case 'draft':
         if (link.pid && this.byPid.get(link.pid) === link) this.o.onDraft(link.pid, msg);
         break;
+      case 'info':
+        if (link.pid && this.byPid.get(link.pid) === link && this.o.onInfo) this.o.onInfo(link.pid, msg);
+        break;
       case 'chat':
       case 'chat-here':
       case 'chat-react':
@@ -439,6 +487,10 @@ export class HostNet {
   _heartbeat() {
     if (this.stopped) return;
     const now = Date.now();
+    if (now - (this.announcedAt || 0) > 5000 && !this._dark()) {
+      this.announcedAt = now;
+      this._announce();
+    }
     for (const link of this.links.values()) {
       // A direct channel that went silent is dead: drop it (the relay may still carry us).
       if (link.rtc && link.rtc.open && link.lastRtc && now - link.lastRtc > TIMING.deadAfter) link.dropRtc();
