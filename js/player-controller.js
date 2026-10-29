@@ -61,7 +61,7 @@ export class PlayerController {
   /** The host is gone for good? If this device is next in line, take over hosting. */
   _watchHost() {
     if (this.ended || !this.identity.pid || !this.onPromote) return;
-    if (this.welcomed && this.net.open) return;
+    // Judge by what the host actually said: a connection can look open while the host is silent.
     const b = this._backup();
     if (!b || b.rank < 0 || b.room.roomId !== this.identity.roomId) return;
     if (this.net.epoch > (b.room.epoch || 0)) return; // someone already took over: just find them
@@ -70,7 +70,7 @@ export class PlayerController {
     if (now - this.net.lastHeard < takeoverMs() * (1 + b.rank * 1.2)) return;
     // Only if *this* device has internet (otherwise it's us who's lost, not the host).
     const since = this.net.onlineSince;
-    if (!since || now - since < 10000) return;
+    if (!since || now - since < Math.min(10000, takeoverMs() * 0.4)) return;
     this.onPromote(b);
   }
 

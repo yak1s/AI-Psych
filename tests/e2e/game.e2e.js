@@ -295,7 +295,7 @@ test('waiting-room chat only reaches people who are waiting, with reactions; vot
 });
 
 test('the host vanishes mid-game: the next device takes over, nobody loses their turn, the old host comes back as a player', { timeout: 180000 }, async () => {
-  const opts = { net: 'takeover=6000' };
+  const opts = { net: 'takeover=8000' };
   const { host, code } = await hostRoom(world, 'Hosty', opts);
   const ann = await joinRoom(world, code, 'Ann', opts);
   const bob = await joinRoom(world, code, 'Bob', opts);
@@ -312,8 +312,11 @@ test('the host vanishes mid-game: the next device takes over, nobody loses their
   await sleep(1500);
 
   // The host's phone goes dark for a long time.
-  await host.evaluate(() => window.__aipsych.current.net.simulateOutage(40000));
-  await until(() => state(ann, (c) => c.isHost === true), 40000);
+  await host.evaluate(() => window.__aipsych.current.net.simulateOutage(45000));
+  await until(() => state(ann, (c) => c.isHost === true), 40000).catch(async (e) => {
+    const why = await state(ann, (c) => ({ welcomed: c.welcomed, open: c.net && c.net.open, sinceHeard: c.net && Date.now() - c.net.lastHeard, onlineFor: c.net && c.net.onlineSince && Date.now() - c.net.onlineSince, relayUp: c.net && c.net.relay && c.net.relay.up, peerOpen: c.net && c.net.peer && c.net.peer.open, epoch: c.net && c.net.epoch, backup: c._backup && c._backup() && { rank: c._backup().rank, age: Date.now() - c._backup().recvAt } }));
+    throw new Error(e.message + ' ' + JSON.stringify(why));
+  });
   assert.equal(await state(ann, (c) => c.room.epoch), 1);
   // Bob finds the new host by himself; Ann's answer survived; the clock was restarted.
   await until(async () => (await state(ann, (c) => c.net.onlinePids())).length >= 1, 30000);
