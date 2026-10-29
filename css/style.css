@@ -646,3 +646,9 @@ body.spotlight .spotlight-layer { opacity: 1; }
 .ai-person { display: grid; grid-template-columns: minmax(70px, 0.6fr) 1.6fr auto; gap: 6px; align-items: center; }
 .ai-form .input { font-size: 16px; padding: 6px 10px; }
 .prompt-preview { white-space: pre-wrap; font-size: 12px; max-height: 220px; overflow: auto; background: rgba(45, 42, 74, 0.05); padding: 8px; border-radius: 8px; }
+
+.last-chance {
+  text-align: center; font-size: 19px; padding: 12px 14px; border: 3px solid #b3261e; border-radius: var(--wobble-2);
+  background: rgba(255, 123, 107, 0.18); color: #7a1610; animation: pop-in 0.45s var(--bounce) both, shake 0.5s 0.45s both;
+}
+.last-chance .small { font-size: 14px; opacity: 0.8; margin-top: 4px; }

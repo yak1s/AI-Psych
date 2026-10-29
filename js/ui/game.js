@@ -332,9 +332,21 @@ export function VotePhase({ ctrl, view }) {
   };
 
   const voted = g.myVote;
+  // Ran out of time once already: a loud warning and 10 more seconds (once per game).
+  const lastChance = !!(g.timer && g.timer.lastChance && g.timer.lastChance.includes(view.me) && !voted);
+  useEffect(() => {
+    if (!lastChance) return;
+    sfx('whistleUp');
+    haptic('alert');
+  }, [lastChance]);
+  const lateOthers = g.timer && g.timer.lastChance ? g.timer.lastChance.filter((p) => p !== view.me && !g.voted.includes(p)) : [];
   return html`<div class="stack enter" data-testid="vote-phase">
     <${QuestionCard} view=${view} animate=${false} compact />
     ${endsAt && html`<${TimerRing} endsAt=${endsAt} total=${g.timer.total} />`}
+    ${lastChance && html`<div class="last-chance" role="alert" data-testid="last-chance">
+      ⏰ <b>Time's up — last chance!</b> Vote in the next 10 seconds, or your own answer won't get any points this round.
+      <div class="small">(You only get this extra time once per game.)</div>
+    </div>`}
     ${canVote && !voted && (isJudge
       ? html`<div class="judge-banner">⚖️ You're the judge! Your vote is worth <b>2 points</b></div>`
       : html`<h2 class="center" style="font-size:26px">Pick your favorite!</h2>`)}
@@ -363,7 +375,9 @@ export function VotePhase({ ctrl, view }) {
       ${voted && html`<p class="script center" style="font-size:26px;margin:0">Vote locked! 🔒</p>`}
       <${Progress} n=${g.voted.length} total=${g.voters.length} label="voted" />
       <${StatusList} view=${view} ids=${g.voters} done=${g.voted} doneText="voted!" waitText="deciding…" />
-      ${expired
+      ${lateOthers.length
+        ? html`<p class="quip" data-testid="last-chance-others">⏳ Giving ${lateOthers.map((p) => who(p).name).join(' & ')} 10 more seconds to vote…</p>`
+        : expired
         ? html`<p class="quip">${hard ? "⏰ Time's up! Counting the votes…" : "⏰ Time's up! Waiting on the host…"}</p>`
         : html`<${Quips} pool=${VOTE_QUIPS} creepy=${g.q.level >= 4 && !g.q.generic ? VOTE_CREEPY : null} slow=${slow} />`}
       <${WaitChat} ctrl=${ctrl} view=${view} scope=${g.q.key} label=${`Q${g.idx + 1} · waiting for votes`} />

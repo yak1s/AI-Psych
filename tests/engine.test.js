@@ -299,6 +299,8 @@ test('hard time limits auto-advance answer and vote phases', () => {
   assert.equal(g.options.length, 2);
   assert.equal(g.timer.total, 45000);
   assert.ok(E.tick(t.room, { ...t.ctx, now: g.timer.endsAt + 2000 }));
+  assert.equal(g.phase, 'vote', 'Ann and Bob get 10 more seconds (first time this game)');
+  assert.ok(E.tick(t.room, { ...t.ctx, now: g.timer.endsAt + 2000 }));
   assert.equal(g.phase, 'results');
 });
 
@@ -391,6 +393,8 @@ test('a picked but not locked vote is counted when time runs out', () => {
   const pick = g.options.find((o) => o.pid !== t.ids.Ann);
   assert.ok(E.setVoteDraft(t.room, t.ids.Ann, pick.oid, g.q.key));
   assert.equal(E.setVoteDraft(t.room, t.ids.Ann, g.options.find((o) => o.pid === t.ids.Ann).oid, g.q.key), false, 'not your own');
+  t.ctx.now = g.timer.endsAt + 5000;
+  assert.ok(E.tick(t.room, t.ctx)); // the others get their one last chance first
   t.ctx.now = g.timer.endsAt + 5000;
   assert.ok(E.tick(t.room, t.ctx));
   assert.equal(g.phase, 'results');
@@ -499,4 +503,32 @@ test('questions other players already played elsewhere are avoided', () => {
   t.act('Host', { type: 'start' });
   assert.equal(t.room.game.q.id, keep.id);
   assert.ok(E.seenScore(t.room, keep.id, Object.values(t.ids)) > 0, 'now marked as seen');
+});
+
+test('first time a player runs out of time to vote in a game: a warning and 10 more seconds, once', () => {
+  const t = setup();
+  t.room.settings.timeLimit = 'fast';
+  t.room.settings.rounds = 5;
+  t.act('Host', { type: 'start' });
+  const g = t.room.game;
+  const voteRound = () => {
+    for (const n of t.names) if (g.q.answerers.includes(t.ids[n])) t.act(n, { type: 'answer', text: 'a ' + n + g.idx, qkey: g.q.key });
+    for (const n of ['Host', 'Ann', 'Cid']) t.act(n, { type: 'vote', oid: g.options.find((o) => o.pid !== t.ids[n]).oid, qkey: g.q.key });
+  };
+  voteRound();
+  t.ctx.now = g.timer.endsAt + 2000;
+  assert.ok(E.tick(t.room, t.ctx));
+  assert.equal(g.phase, 'vote', 'Bob gets a last chance');
+  assert.deepEqual(g.timer.lastChance, [t.ids.Bob]);
+  assert.equal(g.timer.endsAt - t.ctx.now, E.LAST_CHANCE_MS);
+  assert.deepEqual(E.viewFor(t.room, t.ids.Bob, t.ctx).game.timer.lastChance, [t.ids.Bob]);
+  t.ctx.now = g.timer.endsAt + 2000;
+  E.tick(t.room, t.ctx);
+  assert.equal(g.phase, 'results', 'only one extension');
+  // Next round, Bob runs out again: no more warnings this game.
+  t.act('Host', { type: 'next' });
+  voteRound();
+  t.ctx.now = g.timer.endsAt + 2000;
+  E.tick(t.room, t.ctx);
+  assert.equal(g.phase, 'results', 'the warning is once per game');
 });

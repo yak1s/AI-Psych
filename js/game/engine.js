@@ -23,6 +23,7 @@ const DEAL_MS = 650; // per answer card dealt on the voting screen
 const GRACE_MS = 1500; // let the last keystrokes arrive before a hard timer fires
 const EXTRA_STEP_MS = 5000; // a time limit runs out while someone is reconnecting: wait a bit…
 const EXTRA_MAX_MS = 25000; // …but never more than this in total
+export const LAST_CHANCE_MS = 10000; // first time someone runs out of time to vote in a game: one warning + 10s
 export const ROUND_CHOICES = [5, 10, 15];
 export const ANSWER_MAX = 120;
 export const NAME_MAX = 14;
@@ -664,6 +665,21 @@ export function tick(room, ctx) {
     room.seq++;
     return true;
   }
+  // The first time (per game) a player runs out of time to vote with points at stake,
+  // they get a warning and 10 more seconds instead of silently losing their points.
+  if (g.phase === 'vote' && !g.timer.lastChance) {
+    g.voteWarned = g.voteWarned || [];
+    const late = missingNow(room).filter((p) => !g.voteWarned.includes(p) && g.options.some((o) => o.pid === p));
+    if (late.length) {
+      g.voteWarned.push(...late);
+      g.timer.lastChance = late;
+      g.timer.endsAt = ctx.now + LAST_CHANCE_MS;
+      g.timer.start = ctx.now;
+      g.timer.total = LAST_CHANCE_MS;
+      room.seq++;
+      return true;
+    }
+  }
   if (g.phase === 'answer') {
     collectDrafts(room, ctx);
     if (Object.keys(g.answers).length) beginVote(room, ctx);
@@ -907,7 +923,7 @@ export function viewFor(room, pid, ctx) {
     gv.q = { key: g.q.key, id: g.q.id, level: g.q.level, segments: g.q.segments, about: g.q.about, participants: g.q.participants, answerers: g.q.answerers, generic: !!g.q.generic, kind: g.q.kind || (g.q.generic ? 'generic' : 'deck'), cat: g.q.cat || null };
   }
   if (g.timer && (g.phase === 'answer' || g.phase === 'vote')) {
-    gv.timer = { remaining: g.timer.endsAt - ctx.now, total: g.timer.total || TIMER_MS, hard: !!g.timer.hard, startsIn: Math.max(0, (g.timer.start || 0) - ctx.now), extra: g.timer.extra || 0, waiting: g.timer.waiting || null };
+    gv.timer = { remaining: g.timer.endsAt - ctx.now, total: g.timer.total || TIMER_MS, hard: !!g.timer.hard, startsIn: Math.max(0, (g.timer.start || 0) - ctx.now), extra: g.timer.extra || 0, waiting: g.timer.waiting || null, lastChance: g.timer.lastChance || null };
   }
   if (g.phase === 'answer') {
     gv.answered = Object.keys(g.answers).filter((p) => g.q.answerers.includes(p));

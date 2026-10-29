@@ -230,13 +230,15 @@ test('hard time limit sends whatever was typed and moves on by itself', { timeou
   assert.ok(texts.includes('typed but never submitted'), 'unsent text was submitted: ' + texts);
   assert.ok(texts.includes('bob submitted this'), 'original kept when the edit was not sent');
   assert.ok(!texts.includes('bob edit that never got sent'));
-  // the voting limit also moves on by itself
+  // the voting limit also moves on by itself — after a one-time 10-second warning for whoever didn't vote
   await host.evaluate(() => {
     const c = window.__aipsych.current;
     c.room.game.timer.endsAt = Date.now() + 500;
     c.commit();
   });
-  for (const p of [host, ann, bob]) await p.getByTestId('results-phase').waitFor({ timeout: 15000 });
+  await ann.getByTestId('last-chance').waitFor({ timeout: 10000 });
+  assert.equal(await state(ann, (c) => c.view.game.phase), 'vote', 'still voting during the last chance');
+  for (const p of [host, ann, bob]) await p.getByTestId('results-phase').waitFor({ timeout: 20000 });
   for (const p of [host, ann, bob]) await p.context().close();
 });
 

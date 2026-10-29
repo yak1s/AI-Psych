@@ -1,6 +1,6 @@
 // Offline cache (stale-while-revalidate). A refresh keeps working during short
 // internet outages; new deploys are picked up on the following load.
-const CACHE = 'aipsych-v5';
+const CACHE = 'aipsych-v6';
 const CORE = [
   './',
   './index.html',
