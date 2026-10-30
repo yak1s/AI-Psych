@@ -2,7 +2,7 @@
 // Run with: npm run test:e2e   (see README)
 import { test as nodeTest, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { startWorld, hostRoom, joinRoom, tap, press, state, until, sleep, onlineCount, answerAll, voteAll } from './harness.js';
+import { startWorld, hostRoom, joinRoom, tap, press, settled, state, until, sleep, onlineCount, answerAll, voteAll } from './harness.js';
 
 let world;
 // Every test: on failure, print what each device was doing before failing.
@@ -143,7 +143,16 @@ test('host timer needs confirmation, skip question, kick and late join', { timeo
   await ann.getByTestId('answer-input').fill('thrown away');
   await tap(ann, 'submit-answer');
   await tap(host, 'skip-question');
-  await press(host.getByRole('button', { name: 'Skip it' }));
+  const skipBtn = host.getByRole('button', { name: 'Skip it' });
+  await settled(skipBtn);
+  // What's really under the pointer at the button's center (diagnoses click problems in other browsers).
+  const hit = await skipBtn.evaluate((b) => {
+    const r = b.getBoundingClientRect();
+    const el = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return { rect: [r.x, r.y, r.width, r.height].map(Math.round), top: el && `${el.tagName}.${el.className} "${(el.textContent || '').trim().slice(0, 20)}"`, same: !!el && (el === b || b.contains(el)) };
+  });
+  if (!hit.same) console.log('# skip button is covered:', JSON.stringify(hit));
+  await skipBtn.click();
   await until(async () => {
     const g = await state(host, (c) => c.view.game);
     return g.q.key !== first && g.idx === 0 && g.answered.length === 0;
