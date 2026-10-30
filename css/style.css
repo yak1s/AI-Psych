@@ -87,7 +87,7 @@ body[data-mood='5'] .vignette { animation: breathe 5s ease-in-out infinite; }
 @media (max-width: 720px) { .scatter-item { opacity: 0.18; } }
 
 /* ------------------------------------------------------------------ layout */
-.app { position: relative; z-index: 1; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+.app { position: relative; z-index: 1; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; overflow-x: clip; }
 .topbar {
   position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 10px;
   padding: calc(8px + env(safe-area-inset-top)) 14px 8px;
@@ -670,7 +670,9 @@ body.spotlight .spotlight-layer { opacity: 1; }
 .deck-make { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .deck-make .btn { width: 100%; justify-content: center; }
 @media (max-width: 420px) { .deck-make { grid-template-columns: 1fr; } .ai-person { grid-template-columns: 1fr auto; } .ai-person input:nth-child(2) { grid-column: 1 / -1; grid-row: 2; } }
-.device-toggles { display: flex; gap: 8px; flex-wrap: nowrap; justify-content: center; }
-.device-toggles .btn { flex: 1 1 0; min-width: 0; justify-content: center; white-space: nowrap; font-size: 15px; padding: 6px 8px; }
-.device-toggles .state { font-size: 12px; padding: 0 6px; border-radius: 8px; border: 1.5px solid currentColor; opacity: 0.8; }
+.device-toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.device-toggles .btn { min-width: 0; width: 100%; flex-direction: column; gap: 2px; justify-content: center; text-align: center; white-space: normal; line-height: 1.15; font-size: 16px; padding: 6px 6px; }
+.device-toggles .state { font-size: 12px; padding: 0 7px; border-radius: 8px; border: 1.5px solid currentColor; opacity: 0.8; white-space: nowrap; }
+/* nothing inside a column may force the page wider than the phone */
+.host-grid > *, .stack > *, .card { min-width: 0; }
 body.modal-open .screen { z-index: 65; }
