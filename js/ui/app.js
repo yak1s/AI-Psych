@@ -5,9 +5,8 @@ import { Home, HostSetup, JoinForm, Knocking, Ended, HowToPlay } from './home.js
 import { PlayerLobby, HostLobby } from './lobby.js';
 import { AnswerPhase, VotePhase, HostDock } from './game.js';
 import { ResultsPhase, FinalPhase } from './results.js';
-import { Greeting, JoinRequests, HandoverNote } from './people.js';
-import { remind, notifyState, enableNotify, disableNotify } from './notify.js';
-import { fullscreenSupported, fullscreenWanted, setFullscreen } from './fullscreen.js';
+import { Greeting, JoinRequests, HandoverNote, DeviceToggles } from './people.js';
+import { remind } from './notify.js';
 import { trackAway } from '../signals.js';
 import { HostController } from '../host-controller.js';
 import { PlayerController } from '../player-controller.js';
@@ -134,22 +133,6 @@ function TopBar({ ctrl, view, onMenu, onHome }) {
     <${MuteButton} />
     ${ctrl && html`<button class="icon-btn" aria-label="Menu" onClick=${onMenu} data-testid="menu">${Doodle.menu({ size: 24 })}</button>`}
   </header>`;
-}
-
-function MenuToggles() {
-  const [, bump] = useReducer((x) => x + 1, 0);
-  const ns = notifyState();
-  return html`<div class="stack" style="gap:8px">
-    ${ns !== 'unsupported' &&
-    html`<${Btn} block color=${ns === 'on' ? 'mint' : 'paper'} sound="tap" testid="notify-toggle"
-      onClick=${async () => { if (ns === 'on') disableNotify(); else await enableNotify(); bump(); }}>
-      🔔 Reminders: ${ns === 'on' ? 'on' : ns === 'blocked' ? 'blocked in browser settings' : 'off'}
-    <//>`}
-    ${fullscreenSupported() &&
-    html`<${Btn} block color=${fullscreenWanted() ? 'mint' : 'paper'} sound="tap" onClick=${() => { setFullscreen(!fullscreenWanted()); bump(); }}>
-      ⛶ Full screen: ${fullscreenWanted() ? 'on' : 'off'}
-    <//>`}
-  </div>`;
 }
 
 /** Nudge players (notification + blinking tab) when it's their turn and they're elsewhere. */
@@ -379,7 +362,7 @@ export function App({ boot }) {
     html`<${Modal} onClose=${() => setMenu(false)} title="Menu">
       <div class="stack" style="gap:10px">
         <${Btn} block color="sky" sound="tap" onClick=${() => { setMenu(false); setRules(true); }}>How to play<//>
-        <${MenuToggles} />
+        <${DeviceToggles} card=${false} />
         <${Btn} block color="coral" onClick=${() => setConfirmLeave(true)} testid="leave-room">${ctrl && ctrl.isHost ? 'Close the room' : 'Leave the room'}<//>
         <${Btn} block color="paper" sound="tap" onClick=${() => setMenu(false)}>Back to the game<//>
       </div>

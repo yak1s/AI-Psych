@@ -7,7 +7,7 @@ import { netQuery } from '../config.js';
 import { sfx, buzz } from './audio.js';
 import qrcode from '../vendor/qrcode.js';
 import { AiDeckHelper } from './deckprompt.js';
-import { ReminderPrompt } from './people.js';
+import { DeviceToggles } from './people.js';
 
 export function joinUrl(code) {
   const base = location.origin + location.pathname;
@@ -65,7 +65,7 @@ export function PlayerLobby({ view }) {
     <div class="card"><div class="card-title">${Doodle.star({ size: 24 })} Players (${view.players.length}/${MAX_PLAYERS})</div>
       <${PlayerTiles} view=${view} />
     </div>
-    <${ReminderPrompt} />
+    <${DeviceToggles} />
     <p class="quip" key=${tip}>${LOBBY_TIPS[tip]}</p>
     ${view.gamesPlayed > 0 && html`<p class="center muted">Games played in this room: ${view.gamesPlayed}</p>`}
   </div></div>`;
@@ -194,9 +194,9 @@ function DeckPanel({ ctrl, view, info }) {
           </label>
           <div class="stack" style="gap:6px">
             <span class="muted small">No deck? The AI uses its ${info.builtin ? info.builtin.total : ''} built-in questions — plus whatever it notices about you.</span>
-            <div class="row" style="gap:10px">
-              <${Btn} small color="grape" onClick=${() => setAi(true)} testid="ai-deck">✨ Make a deck with AI<//>
-              <button class="link-btn" style="font-size:19px" onClick=${downloadTemplate}>download template (write your own)</button>
+            <div class="deck-make">
+              <${Btn} color="grape" onClick=${() => setAi(true)} testid="ai-deck">✨ Make one with AI<//>
+              <${Btn} color="sky" sound="tap" onClick=${downloadTemplate} testid="template-btn">📄 Download the template<//>
             </div>
           </div>`}
         ${deck &&
@@ -225,7 +225,7 @@ function DeckPanel({ ctrl, view, info }) {
             <div class="muted small">Questions about people who aren't matched are skipped. Names in questions use what players typed when joining.</div>
           </div>`}
       `}
-    ${ai && html`<${AiDeckHelper} view=${view} onClose=${() => setAi(false)} onPaste=${(text) => loadText(text, 'ai-deck.json')} />`}
+    ${ai && html`<${AiDeckHelper} view=${view} onClose=${() => setAi(false)} onPaste=${(text) => loadText(text, 'ai-deck.json')} onTemplate=${downloadTemplate} />`}
     ${info.builtin && info.builtin.seen > 0 && html`<div class="muted small" data-testid="seen-info">Built-in questions: ${info.builtin.fresh} nobody here has played yet · ${info.builtin.seen} played before by someone here (those come last)</div>`}
     ${info.usedCount > 0 && html`<div class="row" style="justify-content:space-between">
       <span class="muted small">${info.usedCount} question${info.usedCount === 1 ? '' : 's'} already played on this device — never repeated</span>
@@ -257,7 +257,7 @@ export function HostLobby({ ctrl, view }) {
         </div>
       </div>
       <div class="stack">
-        <${ReminderPrompt} />
+        <${DeviceToggles} />
         <${Settings} ctrl=${ctrl} info=${info} />
         <${DeckPanel} ctrl=${ctrl} view=${view} info=${info} />
         <div class="card stack" style="align-items:center;text-align:center">

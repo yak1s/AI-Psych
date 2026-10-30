@@ -4,7 +4,8 @@
 import { html, useState, useEffect } from '../vendor/preact-htm.js';
 import { Btn, Avatar, Modal, Confirm, playerMap } from './common.js';
 import { sfx, haptic } from './audio.js';
-import { notifyState, enableNotify } from './notify.js';
+import { notifyState, enableNotify, disableNotify } from './notify.js';
+import { fullscreenSupported, fullscreenWanted, setFullscreen } from './fullscreen.js';
 
 const WELCOMES = [
   'Welcome, {name}! The AI already started a file on you. 📁',
@@ -121,12 +122,26 @@ export function PlayersPanel({ ctrl, view, onClose }) {
   <//>`;
 }
 
-/** One tap to get reminders when the game needs you while you're in another app. */
-export function ReminderPrompt() {
-  const [state, setState] = useState(() => notifyState());
-  if (state !== 'ask') return null;
-  return html`<div class="card row" style="justify-content:space-between;gap:10px" data-testid="reminder-prompt">
-    <span>🔔 Get a nudge when it's your turn, even if you switch apps.</span>
-    <${Btn} small color="sun" onClick=${async () => setState(await enableNotify())}>Turn on<//>
+/** Reminders and full screen, side by side (lobby and menu). */
+export function DeviceToggles({ card = true }) {
+  const [, bump] = useState(0);
+  const ns = notifyState();
+  const fs = fullscreenSupported();
+  if (ns === 'unsupported' && !fs) return null;
+  const body = html`<div class="device-toggles" data-testid="device-toggles">
+    ${ns !== 'unsupported' &&
+    html`<${Btn} small color=${ns === 'on' ? 'mint' : 'paper'} sound="tap" testid="notify-toggle" title="A nudge when it's your turn, even in another app"
+      onClick=${async () => { if (ns === 'on') disableNotify(); else await enableNotify(); bump((x) => x + 1); }}>
+      🔔 Reminders <span class="state">${ns === 'on' ? 'on' : ns === 'blocked' ? 'blocked' : 'off'}</span>
+    <//>`}
+    ${fs &&
+    html`<${Btn} small color=${fullscreenWanted() ? 'mint' : 'paper'} sound="tap" testid="fullscreen-toggle"
+      onClick=${() => { setFullscreen(!fullscreenWanted()); bump((x) => x + 1); }}>
+      ⛶ Full screen <span class="state">${fullscreenWanted() ? 'on' : 'off'}</span>
+    <//>`}
+  </div>`;
+  if (!card) return body;
+  return html`<div class="card" style="padding:10px 14px">${body}
+    ${ns === 'blocked' && html`<div class="muted small" style="margin-top:6px">Reminders are blocked in this browser's site settings.</div>`}
   </div>`;
 }

@@ -103,17 +103,37 @@ export function Seg({ options, value, onChange }) {
   </div>`;
 }
 
-export function Modal({ onClose, children, title }) {
+let openModals = 0;
+
+export function Modal({ onClose, children, title, big, head, foot, testid }) {
   useEffect(() => {
     const k = (e) => e.key === 'Escape' && onClose && onClose();
     addEventListener('keydown', k);
     return () => removeEventListener('keydown', k);
   }, [onClose]);
+  // Dialogs live inside the page; lift the page above the top bar while one is open.
+  useEffect(() => {
+    openModals++;
+    document.body.classList.add('modal-open');
+    return () => {
+      if (--openModals <= 0) document.body.classList.remove('modal-open');
+    };
+  }, []);
   return html`<div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && onClose && onClose()}>
-    <div class="modal card" role="dialog" aria-modal="true">
-      ${title && html`<h2>${title}</h2>`}
-      ${children}
-    </div>
+    ${big
+      ? html`<div class="modal big card" role="dialog" aria-modal="true" data-testid=${testid}>
+          <div class="modal-head">
+            ${title && html`<h2>${title}</h2>`}
+            ${onClose && html`<button class="modal-x" aria-label="Close" onClick=${onClose}>✕</button>`}
+            ${head}
+          </div>
+          <div class="modal-body">${children}</div>
+          ${foot && html`<div class="modal-foot">${foot}</div>`}
+        </div>`
+      : html`<div class="modal card" role="dialog" aria-modal="true">
+          ${title && html`<h2>${title}</h2>`}
+          ${children}
+        </div>`}
   </div>`;
 }
 

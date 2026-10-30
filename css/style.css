@@ -652,3 +652,25 @@ body.spotlight .spotlight-layer { opacity: 1; }
   background: rgba(255, 123, 107, 0.18); color: #7a1610; animation: pop-in 0.45s var(--bounce) both, shake 0.5s 0.45s both;
 }
 .last-chance .small { font-size: 14px; opacity: 0.8; margin-top: 4px; }
+
+/* big dialogs (AI deck helper): straight, fits the screen, header + footer stay put */
+.modal.big {
+  max-width: 640px; display: flex; flex-direction: column; padding: 0; overflow: hidden;
+  max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  --r: 0deg;
+}
+.modal.big::after { transform: none; inset: -4px; }
+.modal-head { position: relative; padding: 14px 18px 10px; border-bottom: 2px dashed var(--ink-faint); }
+.modal-head h2 { margin: 0 34px 8px 0; font-size: 24px; }
+.modal-x { position: absolute; top: 10px; right: 12px; width: 34px; height: 34px; border: 2px solid var(--ink); border-radius: 50%; background: var(--card); font-size: 16px; }
+.modal-body { padding: 12px 18px; overflow-y: auto; overscroll-behavior: contain; flex: 1; min-height: 0; }
+.modal-foot { padding: 10px 18px 14px; border-top: 2px dashed var(--ink-faint); display: flex; flex-direction: column; gap: 6px; }
+.ai-tabs { flex-wrap: nowrap; }
+.ai-tabs button { font-size: 16px; padding: 6px 10px; }
+.deck-make { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.deck-make .btn { width: 100%; justify-content: center; }
+@media (max-width: 420px) { .deck-make { grid-template-columns: 1fr; } .ai-person { grid-template-columns: 1fr auto; } .ai-person input:nth-child(2) { grid-column: 1 / -1; grid-row: 2; } }
+.device-toggles { display: flex; gap: 8px; flex-wrap: nowrap; justify-content: center; }
+.device-toggles .btn { flex: 1 1 0; min-width: 0; justify-content: center; white-space: nowrap; font-size: 15px; padding: 6px 8px; }
+.device-toggles .state { font-size: 12px; padding: 0 6px; border-radius: 8px; border: 1.5px solid currentColor; opacity: 0.8; }
+body.modal-open .screen { z-index: 65; }
