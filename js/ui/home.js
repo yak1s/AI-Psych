@@ -23,7 +23,6 @@ export function HowToPlay({ onClose }) {
       <li>Our AI asks a question <b>about one of you</b>. Everybody writes a funny (or honest…) answer.</li>
       <li>Everyone votes for their favorite answer — but not their own! <b>No vote, no points:</b> if you don't vote, your own answer's points don't count.</li>
       <li>The person the question is about is the <b>judge</b>: their vote is worth <b>2 points</b>. Everyone else's vote is worth 1.</li>
-      <li>The questions start innocent… and the AI gets more and more <i>curious</i> as the game goes on. It also notices things about you while you play. 👀</li>
     </ol>
     <p class="muted small">No accounts, no downloads. If your connection drops or you refresh, you'll pop right back in — even if the host's phone dies, someone else takes over and the game goes on.</p>
     <div class="row" style="justify-content:flex-end"><${Btn} small onClick=${onClose}>Got it!<//></div>

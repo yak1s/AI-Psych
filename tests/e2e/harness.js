@@ -3,7 +3,7 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import { chromium } from 'playwright';
+import { chromium, firefox } from 'playwright';
 import { PeerServer } from 'peer';
 import { Aedes } from 'aedes';
 import { WebSocketServer, createWebSocketStream } from 'ws';
@@ -30,7 +30,18 @@ export async function startWorld() {
   const httpPort = await listen(http);
   const signal = await startSignal();
   const broker = await startBroker();
-  const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
+  // BROWSER=firefox runs the whole suite in Firefox (CI runs both).
+  const browser =
+    process.env.BROWSER === 'firefox'
+      ? await firefox.launch({
+          firefoxUserPrefs: {
+            // let two test windows on one machine reach each other directly (real devices don't need this)
+            'media.peerconnection.ice.obfuscate_host_addresses': false,
+            'media.peerconnection.ice.loopback': true,
+            'media.navigator.permission.disabled': true,
+          },
+        })
+      : await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
   const errors = [];
   const world = {
     browser,

@@ -252,8 +252,9 @@ export function signals() {
       })
       .catch(() => {});
   } else {
+    // Chrome's reduced UA says "K"; Firefox for Android says "Mobile"/"Tablet": neither is a model.
     const m = /Android [\d.]+; ([^;)]+)[;)]/.exec(navigator.userAgent || '');
-    if (m && m[1] !== 'K') {
+    if (m && !/^(K|Mobile|Tablet|wv)$/i.test(m[1].trim())) {
       cached.model = m[1].trim();
       cached.brand = brandFromModel(cached.model) || cached.brand;
     }
