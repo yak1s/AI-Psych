@@ -2,7 +2,7 @@
 // Run with: npm run test:e2e   (see README)
 import { test as nodeTest, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { startWorld, hostRoom, joinRoom, tap, state, until, sleep, onlineCount, answerAll, voteAll } from './harness.js';
+import { startWorld, hostRoom, joinRoom, tap, press, state, until, sleep, onlineCount, answerAll, voteAll } from './harness.js';
 
 let world;
 // Every test: on failure, print what each device was doing before failing.
@@ -35,7 +35,7 @@ test('a full game with a secret deck, a player refresh and a host refresh', { ti
   await until(() => state(host, (c) => c.room.assign.mom && c.room.assign.dad && c.room.assign.sarah));
   assert.equal(await state(host, (c) => c.room.assign['grandpa joe'] || null), null, 'Grandpa Joe did not join');
 
-  await host.getByRole('radio', { name: '5', exact: true }).click({ force: true });
+  await press(host.getByRole('radio', { name: '5', exact: true }));
   await tap(host, 'start-game');
 
   const levels = [];
@@ -143,7 +143,7 @@ test('host timer needs confirmation, skip question, kick and late join', { timeo
   await ann.getByTestId('answer-input').fill('thrown away');
   await tap(ann, 'submit-answer');
   await tap(host, 'skip-question');
-  await host.getByRole('button', { name: 'Skip it' }).click({ force: true });
+  await press(host.getByRole('button', { name: 'Skip it' }));
   await until(async () => {
     const g = await state(host, (c) => c.view.game);
     return g.q.key !== first && g.idx === 0 && g.answered.length === 0;
@@ -185,7 +185,7 @@ test('players whose network blocks WebRTC (VPN, strict NAT) play through the enc
   const blocked = await joinRoom(world, code, 'Vpn', { net: 'rtc=off' });
   assert.equal(await state(direct, (c) => c.transport), 'direct');
   assert.equal(await state(blocked, (c) => c.transport), 'relay');
-  await host.getByRole('radio', { name: '5', exact: true }).click({ force: true });
+  await press(host.getByRole('radio', { name: '5', exact: true }));
   await tap(host, 'start-game');
   await answerAll([host, direct, blocked]);
   await voteAll([host, direct, blocked]);
@@ -220,14 +220,14 @@ test('hard time limit sends whatever was typed and moves on by itself', { timeou
   const { host, code } = await hostRoom(world);
   const ann = await joinRoom(world, code, 'Ann');
   const bob = await joinRoom(world, code, 'Bob', { net: 'rtc=off' });
-  await host.getByRole('radio', { name: 'Fast', exact: true }).click({ force: true });
+  await press(host.getByRole('radio', { name: 'Fast', exact: true }));
   await tap(host, 'start-game');
   for (const p of [ann, bob]) await p.getByTestId('answer-input').waitFor({ timeout: 20000 });
   await ann.getByTestId('answer-input').fill('typed but never submitted');
   await bob.getByTestId('answer-input').fill('bob submitted this');
   await tap(bob, 'submit-answer');
   // Bob opens his answer to edit it but runs out of time: his original stays.
-  await bob.getByText('change it').click({ force: true });
+  await press(bob.getByText('change it'));
   await bob.getByTestId('answer-input').fill('bob edit that never got sent');
   await sleep(1200);
   await host.evaluate(() => {
@@ -272,12 +272,12 @@ test('waiting-room chat only reaches people who are waiting, with reactions; vot
   assert.equal(await bob.locator('.chat-msg.theirs').count(), 1, "others' messages on the other side");
 
   // Bob reacts; Ann sees it.
-  await bob.getByTestId('chat-bubble').first().click({ force: true });
-  await bob.locator('.react-bar button', { hasText: '😂' }).click({ force: true });
+  await press(bob.getByTestId('chat-bubble').first());
+  await press(bob.locator('.react-bar button', { hasText: '😂' }));
   await ann.locator('.chat-react', { hasText: '😂' }).waitFor({ timeout: 10000 });
 
   // Bob goes back to edit: he misses what's said meanwhile, even after coming back.
-  await bob.getByText('change it').click({ force: true });
+  await press(bob.getByText('change it'));
   await bob.getByTestId('answer-input').waitFor();
   await sleep(500);
   await ann.getByTestId('chat-input').fill('bob cannot see this');
@@ -298,7 +298,7 @@ test('waiting-room chat only reaches people who are waiting, with reactions; vot
   await ann.getByTestId('vote-phase').waitFor({ timeout: 20000 });
   const opt = ann.getByTestId('option').first();
   await opt.waitFor({ timeout: 15000 });
-  await opt.click({ force: true });
+  await press(opt);
   assert.equal(await ann.getByTestId('lock-nudge').count(), 0);
   await ann.getByTestId('lock-nudge').waitFor({ timeout: 9000 });
   for (const p of [host, ann, bob, cid]) await p.context().close();
@@ -309,7 +309,7 @@ test('the host vanishes mid-game: the next device takes over, nobody loses their
   const { host, code } = await hostRoom(world, 'Hosty', opts);
   const ann = await joinRoom(world, code, 'Ann', opts);
   const bob = await joinRoom(world, code, 'Bob', opts);
-  await host.getByRole('radio', { name: 'Normal', exact: true }).click({ force: true });
+  await press(host.getByRole('radio', { name: 'Normal', exact: true }));
   await tap(host, 'start-game');
   for (const p of [ann, bob]) await p.getByTestId('answer-input').waitFor({ timeout: 20000 });
   await ann.getByTestId('answer-input').fill('written before the host vanished');

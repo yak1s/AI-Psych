@@ -171,7 +171,26 @@ export async function until(fn, ms = 30000, step = 150) {
 }
 
 /** Click without waiting for bouncy animations to settle. */
-export const tap = (page, testid) => page.getByTestId(testid).click({ force: true });
+/** Wait until an element has stopped moving (pop-in / deal animations), like a person would. */
+export async function settled(locator) {
+  await locator.waitFor({ state: 'visible', timeout: 20000 });
+  let last = null;
+  for (let i = 0; i < 30; i++) {
+    const b = await locator.boundingBox().catch(() => null);
+    const key = b && [b.x, b.y, b.width, b.height].map(Math.round).join(',');
+    if (key && key === last) return;
+    last = key;
+    await sleep(80);
+  }
+}
+
+/** Click (forced, because some buttons pulse forever) — but only once the element sits still. */
+export async function press(locator) {
+  await settled(locator);
+  await locator.click({ force: true });
+}
+
+export const tap = (page, testid) => press(page.getByTestId(testid));
 
 /** Read the live controller state of a device. `fn` runs in the page, so it can't use outer variables. */
 export const state = (page, fn) => page.evaluate(`(() => { const c = window.__aipsych && window.__aipsych.current; return (${fn})(c); })()`);
@@ -222,7 +241,7 @@ export async function voteAll(devices) {
     if (!canVote) continue;
     const opt = p.getByTestId('option').first();
     await opt.waitFor({ timeout: 15000 });
-    await opt.click({ force: true });
+    await press(opt);
     await tap(p, 'lock-vote');
   }
   for (const p of devices) await p.getByTestId('results-phase').waitFor({ timeout: 20000 });
