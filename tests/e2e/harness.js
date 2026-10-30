@@ -185,19 +185,15 @@ export async function settled(locator) {
 }
 
 /**
- * Click like a person: Playwright's careful click first (it notices when something covers the
- * button — e.g. Firefox scrolls it under the host's fixed toolbar — and scrolls again). Buttons
- * that pulse forever never count as "stable", so those fall back to a forced click once they sit still.
+ * Click like a person: bring the element to the middle of the screen first (Firefox otherwise parks
+ * it at the bottom edge, under the host's fixed toolbar), wait until it stops moving, then click.
+ * The click is forced because some buttons pulse forever and never count as "stable".
  */
 export async function press(locator) {
+  await locator.waitFor({ state: 'visible', timeout: 20000 });
+  await locator.evaluate((el) => el.scrollIntoView({ block: 'center', inline: 'center' })).catch(() => {});
   await settled(locator);
-  try {
-    await locator.click({ timeout: 4000 });
-  } catch {
-    await locator.scrollIntoViewIfNeeded().catch(() => {});
-    await locator.evaluate((el) => el.scrollIntoView({ block: 'center' })).catch(() => {});
-    await locator.click({ force: true });
-  }
+  await locator.click({ force: true });
 }
 
 export const tap = (page, testid) => press(page.getByTestId(testid));
