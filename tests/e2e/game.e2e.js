@@ -369,13 +369,13 @@ test('lost your phone? Join with the same name on another device and get your se
   for (const p of [host, ann, bob2]) await p.context().close();
 });
 
-test('Firefox gets a friendly "please use Chrome or Safari" page; Firefox on iPhone plays normally', { timeout: 60000 }, async () => {
+test('Firefox gets a friendly "please use Chrome" page; Firefox on iPhone plays normally', { timeout: 60000 }, async () => {
   const ff = await world.device('Firefox Android', { width: 393, height: 780, userAgent: 'Mozilla/5.0 (Android 14; Mobile; rv:131.0) Gecko/131.0 Firefox/131.0' });
   await ff.goto(world.base + '?' + world.query());
-  await ff.getByText('Please open AI Psych in Chrome or Safari').waitFor({ timeout: 10000 });
+  await ff.getByText('Please open AI Psych in Chrome').waitFor({ timeout: 10000 });
   await ff.getByRole('button', { name: 'Copy the link' }).waitFor();
   await sleep(7500); // the "game didn't start" safety net must not replace this page
-  assert.equal(await ff.getByText('Please open AI Psych in Chrome or Safari').count(), 1);
+  assert.equal(await ff.getByText('Please open AI Psych in Chrome').count(), 1);
   assert.equal(await ff.getByTestId('host-btn').count(), 0);
   await ff.getByText('Try it in Firefox anyway').click();
   await ff.getByTestId('host-btn').waitFor({ timeout: 10000 }); // the escape hatch still works
