@@ -51,8 +51,8 @@ export async function startWorld() {
     broker,
     /** extra: e.g. 'rtc=off' to simulate a network where WebRTC can't connect (VPN, strict NAT). */
     query: (extra = '') => `signal=http://127.0.0.1:${world.signal.port}/&ice=none&nosw=1&geo=off&relay=ws://127.0.0.1:${broker.port}${extra ? '&' + extra : ''}`,
-    async device(name, { width = 420, height = 860, scale = 1, context } = {}) {
-      const ctx = context || (await browser.newContext({ viewport: { width, height }, deviceScaleFactor: scale }));
+    async device(name, { width = 420, height = 860, scale = 1, userAgent, context } = {}) {
+      const ctx = context || (await browser.newContext({ viewport: { width, height }, deviceScaleFactor: scale, ...(userAgent ? { userAgent } : {}) }));
       const page = await ctx.newPage();
       page.on('pageerror', (e) => errors.push(`[${name}] ${e.message}`));
       page.on('console', (m) => m.type() === 'error' && !/WebSocket connection|ERR_CONNECTION_REFUSED/.test(m.text()) && errors.push(`[${name}] ${m.text()}`));

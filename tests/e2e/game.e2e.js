@@ -349,3 +349,18 @@ test('lost your phone? Join with the same name on another device and get your se
   assert.equal(await state(host, (c) => c.room.players.filter((p) => !p.gone).length), 3, 'no duplicate player');
   for (const p of [host, ann, bob2]) await p.context().close();
 });
+
+test('Firefox on an Android phone: the page starts and the player can join', { timeout: 60000 }, async () => {
+  const ua = 'Mozilla/5.0 (Android 14; Mobile; rv:131.0) Gecko/131.0 Firefox/131.0';
+  const { host, code } = await hostRoom(world);
+  const phone = await world.device('Firefox Android', { width: 393, height: 780, userAgent: ua });
+  await phone.goto(world.base + '?' + world.query());
+  await phone.getByTestId('host-btn').waitFor({ timeout: 10000 }); // not a blank page
+  assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'fits the screen');
+  await phone.goto(world.base + `?room=${code}&` + world.query());
+  await phone.getByTestId('name-input').fill('Fox');
+  await tap(phone, 'join-go');
+  await until(() => state(phone, (c) => c && c.welcomed && !!c.view), 20000);
+  await until(async () => (await onlineCount(host)) === 1, 10000);
+  for (const p of [host, phone]) await p.context().close();
+});

@@ -22,6 +22,32 @@
     <div id="app">
       <noscript><p style="padding:24px;font-family:sans-serif">AI Psych needs JavaScript turned on.</p></noscript>
     </div>
+    <script>
+      // Never a silent blank page: if the game hasn't started after a few seconds, say so and
+      // show what went wrong (so it can be fixed), with a refresh button.
+      (function () {
+        var errs = [];
+        addEventListener('error', function (e) {
+          var t = e.target;
+          if (t && t !== window && (t.src || t.href)) errs.push('failed to load ' + (t.src || t.href).split('/').slice(-2).join('/'));
+          else errs.push((e.message || 'error') + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : ''));
+        }, true);
+        addEventListener('unhandledrejection', function (e) { errs.push(String((e.reason && e.reason.message) || e.reason)); });
+        window.__bootErrors = errs;
+        setTimeout(function () {
+          var app = document.getElementById('app');
+          if (!app || app.querySelector('.app')) return;
+          var info = (navigator.userAgent + '\n' + (errs.join('\n') || 'no error reported')).replace(/[<>&]/g, '');
+          app.innerHTML = '<div style="padding:24px;font-family:sans-serif;max-width:520px;margin:auto">' +
+            '<h2>The game didn\u2019t start \uD83D\uDE15</h2><p>Try refreshing. If it keeps happening, update this browser or try another one, and send this to whoever set up the game:</p>' +
+            '<pre style="white-space:pre-wrap;font-size:12px;background:#f3eee2;padding:10px;border-radius:8px">' + info + '</pre>' +
+            '<button onclick="location.reload()" style="font-size:18px;padding:8px 18px">Refresh</button></div>';
+        }, 7000);
+      })();
+    </script>
+    <script nomodule>
+      document.getElementById('app').innerHTML = '<p style="padding:24px;font-family:sans-serif">This browser is too old for AI Psych. Please update it (or open the link in Chrome, Firefox or Safari).</p>';
+    </script>
     <script type="module" src="js/main.js"></script>
   </body>
 </html>
