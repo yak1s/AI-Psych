@@ -369,17 +369,19 @@ test('lost your phone? Join with the same name on another device and get your se
   for (const p of [host, ann, bob2]) await p.context().close();
 });
 
-test('Firefox on an Android phone: the page starts and the player can join', { timeout: 60000 }, async () => {
-  const ua = 'Mozilla/5.0 (Android 14; Mobile; rv:131.0) Gecko/131.0 Firefox/131.0';
-  const { host, code } = await hostRoom(world);
-  const phone = await world.device('Firefox Android', { width: 393, height: 780, userAgent: ua });
-  await phone.goto(world.base + '?' + world.query());
-  await phone.getByTestId('host-btn').waitFor({ timeout: 10000 }); // not a blank page
-  assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'fits the screen');
-  await phone.goto(world.base + `?room=${code}&` + world.query());
-  await phone.getByTestId('name-input').fill('Fox');
-  await tap(phone, 'join-go');
-  await until(() => state(phone, (c) => c && c.welcomed && !!c.view), 20000);
-  await until(async () => (await onlineCount(host)) === 1, 10000);
-  for (const p of [host, phone]) await p.context().close();
+test('Firefox gets a friendly "please use Chrome or Safari" page; Firefox on iPhone plays normally', { timeout: 60000 }, async () => {
+  const ff = await world.device('Firefox Android', { width: 393, height: 780, userAgent: 'Mozilla/5.0 (Android 14; Mobile; rv:131.0) Gecko/131.0 Firefox/131.0' });
+  await ff.goto(world.base + '?' + world.query());
+  await ff.getByText('Please open AI Psych in Chrome or Safari').waitFor({ timeout: 10000 });
+  await ff.getByRole('button', { name: 'Copy the link' }).waitFor();
+  await sleep(7500); // the "game didn't start" safety net must not replace this page
+  assert.equal(await ff.getByText('Please open AI Psych in Chrome or Safari').count(), 1);
+  assert.equal(await ff.getByTestId('host-btn').count(), 0);
+  await ff.getByText('Try it in Firefox anyway').click();
+  await ff.getByTestId('host-btn').waitFor({ timeout: 10000 }); // the escape hatch still works
+
+  const fxios = await world.device('Firefox iPhone', { width: 390, height: 780, userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/131.0 Mobile/15E148 Safari/605.1.15' });
+  await fxios.goto(world.base + '?' + world.query());
+  await fxios.getByTestId('host-btn').waitFor({ timeout: 10000 });
+  for (const p of [ff, fxios]) await p.context().close();
 });

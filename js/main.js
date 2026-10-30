@@ -22,7 +22,8 @@ if (role && role.role === 'host' && savedHost && savedHost.room.code === role.co
 else if (role && role.role === 'player' && savedPlayer && savedPlayer.code === role.code) boot = { mode: 'session', resume: 'player' };
 else if (/^\d{4}$/.test(params.get('room') || '')) boot = { mode: 'join', code: params.get('room') };
 
-render(html`<${App} boot=${boot} />`, document.getElementById('app'));
+// (Firefox gets a "please use Chrome or Safari" page from index.html instead.)
+if (!window.__aipsychBlocked) render(html`<${App} boot=${boot} />`, document.getElementById('app'));
 
 // Offline cache: lets a refresh work even while the internet is flaky.
 if ('serviceWorker' in navigator && location.protocol === 'https:' && !params.has('nosw')) {

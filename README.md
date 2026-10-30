@@ -8,6 +8,7 @@ A hand-drawn, watercolor party game in the spirit of _Psych! Outwit Your Friends
 
 - 🎨 Hand-drawn watercolor look, lots of animation, synthesized sound effects and vibrations (every device can mute itself)
 - 📱 No accounts, no install, no server to run — a static site that works on GitHub Pages
+- 🌐 Plays in Chrome, Safari, Edge and Samsung Internet (phones and computers). Firefox isn't supported: it shows a friendly page asking to open the link in Chrome or Safari (Firefox on iPhone is fine — it's Safari inside).
 - 🔁 Survives refreshes, dropped connections and phones going to sleep. **If the host's phone dies, another player takes over and the game goes on.**
 - 👥 2–30 players, games of 5, 10 or 15 questions
 - 👀 150 built-in questions **plus questions built from what the AI notices** (time zones, phones, languages, how people play)

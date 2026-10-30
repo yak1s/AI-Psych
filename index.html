@@ -23,6 +23,38 @@
       <noscript><p style="padding:24px;font-family:sans-serif">AI Psych needs JavaScript turned on.</p></noscript>
     </div>
     <script>
+      // Firefox (desktop and Android) isn't supported: ask for Chrome or Safari instead, with a way
+      // to copy the link — plain HTML, so it shows even where the game itself can't run.
+      // (Firefox on iPhone is Safari inside, so it's fine.)
+      (function () {
+        var ua = navigator.userAgent;
+        var ok = false;
+        try { ok = sessionStorage.getItem('aipsych.tryFirefox') === '1'; } catch (e) {}
+        if (!/Firefox\//.test(ua) || /FxiOS/.test(ua) || ok) return;
+        window.__aipsychBlocked = true;
+        var link = location.href.replace(/[<>"]/g, '');
+        document.getElementById('app').innerHTML =
+          '<div style="padding:28px 20px;font-family:sans-serif;max-width:460px;margin:8vh auto;text-align:center;color:#2d2a4a">' +
+          '<div style="font-size:64px">🦊➡️🌐</div>' +
+          '<h1 style="font-size:26px;margin:10px 0">Please open AI Psych in Chrome or Safari</h1>' +
+          '<p style="font-size:18px;line-height:1.4">This game doesn\u2019t work well in Firefox yet. Copy the link and open it in <b>Chrome</b> (or <b>Safari</b> on iPhone/Mac).</p>' +
+          '<p style="word-break:break-all;background:#f3eee2;padding:10px;border-radius:10px;font-size:14px" id="ff-link">' + link + '</p>' +
+          '<button id="ff-copy" style="font-size:20px;padding:12px 22px;border-radius:14px;border:2.5px solid #2d2a4a;background:#ffc93c;cursor:pointer">Copy the link</button>' +
+          '<p style="margin-top:26px"><a href="#" id="ff-anyway" style="color:#6b6790;font-size:15px">Try it in Firefox anyway</a></p></div>';
+        document.getElementById('ff-copy').onclick = function () {
+          var b = this;
+          var done = function () { b.textContent = 'Copied! Now open Chrome and paste it'; };
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(location.href).then(done, done);
+          else done();
+        };
+        document.getElementById('ff-anyway').onclick = function (e) {
+          e.preventDefault();
+          try { sessionStorage.setItem('aipsych.tryFirefox', '1'); } catch (err) {}
+          location.reload();
+        };
+      })();
+    </script>
+    <script>
       // Never a silent blank page: if the game hasn't started after a few seconds, say so and
       // show what went wrong (so it can be fixed), with a refresh button.
       (function () {
@@ -36,7 +68,7 @@
         window.__bootErrors = errs;
         setTimeout(function () {
           var app = document.getElementById('app');
-          if (!app || app.querySelector('.app')) return;
+          if (!app || app.querySelector('.app') || window.__aipsychBlocked) return;
           var info = (navigator.userAgent + '\n' + (errs.join('\n') || 'no error reported')).replace(/[<>&]/g, '');
           app.innerHTML = '<div style="padding:24px;font-family:sans-serif;max-width:520px;margin:auto">' +
             '<h2>The game didn\u2019t start \uD83D\uDE15</h2><p>Try refreshing. If it keeps happening, update this browser or try another one, and send this to whoever set up the game:</p>' +
