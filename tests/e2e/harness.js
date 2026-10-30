@@ -55,9 +55,45 @@ export async function startWorld() {
       const ctx = context || (await browser.newContext({ viewport: { width, height }, deviceScaleFactor: scale, ...(userAgent ? { userAgent } : {}) }));
       const page = await ctx.newPage();
       page.on('pageerror', (e) => errors.push(`[${name}] ${e.message}`));
-      page.on('console', (m) => m.type() === 'error' && !/WebSocket connection|ERR_CONNECTION_REFUSED/.test(m.text()) && errors.push(`[${name}] ${m.text()}`));
+      // (a dropped connection to the test servers is expected in the outage tests — Chrome and Firefox word it differently)
+      page.on('console', (m) => m.type() === 'error' && !/WebSocket connection|ERR_CONNECTION_REFUSED|can.t establish a connection/.test(m.text()) && errors.push(`[${name}] ${m.text()}`));
+      page.logs = [];
+      page.on('console', (m) => {
+        page.logs.push(`${m.type()}: ${m.text()}`.slice(0, 300));
+        if (page.logs.length > 40) page.logs.shift();
+      });
+      page.on('pageerror', (e) => page.logs.push('pageerror: ' + e.message));
+      world.pages.push(page);
       page.name = name;
       return page;
+    },
+    pages: [],
+    /** When a test fails: print what every open device was doing (shows up in the CI log). */
+    async dump(label) {
+      console.log(`\n===== state of every device (${label}) =====`);
+      for (const p of world.pages) {
+        if (p.isClosed()) continue;
+        let st;
+        try {
+          st = await p.evaluate(() => {
+            const c = window.__aipsych && window.__aipsych.current;
+            if (!c) return { noController: true, body: document.body.innerText.slice(0, 200) };
+            const v = c.view;
+            const g = v && v.game;
+            return {
+              host: !!c.isHost, status: c.status, welcomed: c.welcomed, transport: c.transport, pending: c.pending && c.pending.map((x) => x.a.type),
+              ended: c.ended, phase: g && g.phase, idx: g && g.idx, q: g && g.q && g.q.key,
+              answered: g && g.answered, voted: g && g.voted, voters: g && g.voters, myVote: g && g.myVote, ready: g && g.ready,
+              online: c.isHost ? c.net.onlinePids() : undefined,
+              testids: [...document.querySelectorAll('[data-testid]')].map((e) => e.dataset.testid).slice(0, 25).join(','),
+            };
+          });
+        } catch (e) {
+          st = { evalError: e.message };
+        }
+        console.log(`--- ${p.name}: ${JSON.stringify(st)}`);
+        for (const l of p.logs.slice(-12)) console.log(`    ${l}`);
+      }
     },
     async restartSignal(downMs = 0) {
       await world.signal.close();

@@ -1,10 +1,20 @@
 // End-to-end tests: real browsers, real WebRTC, a private signaling server.
 // Run with: npm run test:e2e   (see README)
-import { test, before, after } from 'node:test';
+import { test as nodeTest, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startWorld, hostRoom, joinRoom, tap, state, until, sleep, onlineCount, answerAll, voteAll } from './harness.js';
 
 let world;
+// Every test: on failure, print what each device was doing before failing.
+const test = (name, opts, fn) =>
+  nodeTest(name, opts, async (t) => {
+    try {
+      await fn(t);
+    } catch (e) {
+      await world.dump(name).catch(() => {});
+      throw e;
+    }
+  });
 before(async () => {
   world = await startWorld();
 });
