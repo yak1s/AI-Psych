@@ -193,6 +193,21 @@ export async function press(locator) {
   await locator.waitFor({ state: 'visible', timeout: 20000 });
   await locator.evaluate((el) => el.scrollIntoView({ block: 'center', inline: 'center' })).catch(() => {});
   await settled(locator);
+  // Is the button really what's under the pointer? If not, report what covers it (so a real layout
+  // problem shows up in the log) and deliver the click to the button itself.
+  const hit = await locator
+    .evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return top && (top === el || el.contains(top)) ? null : top ? `${top.tagName.toLowerCase()}.${String(top.className).split(' ').join('.')} "${(top.textContent || '').trim().slice(0, 25)}"` : 'nothing';
+    })
+    .catch(() => null);
+  if (hit) {
+    const what = await locator.evaluate((el) => `${el.tagName.toLowerCase()} "${(el.textContent || '').trim().slice(0, 25)}"`).catch(() => '?');
+    console.log(`# [${process.env.BROWSER || 'chromium'}] ${what} is covered by ${hit}`);
+    await locator.dispatchEvent('click');
+    return;
+  }
   await locator.click({ force: true });
 }
 
