@@ -152,7 +152,7 @@ test('host timer needs confirmation, skip question, kick and late join', { timeo
     return { rect: [r.x, r.y, r.width, r.height].map(Math.round), top: el && `${el.tagName}.${el.className} "${(el.textContent || '').trim().slice(0, 20)}"`, same: !!el && (el === b || b.contains(el)) };
   });
   if (!hit.same) console.log('# skip button is covered:', JSON.stringify(hit));
-  await skipBtn.click();
+  await press(skipBtn);
   await until(async () => {
     const g = await state(host, (c) => c.view.game);
     return g.q.key !== first && g.idx === 0 && g.answered.length === 0;
