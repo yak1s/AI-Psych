@@ -1,6 +1,6 @@
 # AI Psych 👁️
 
-**The party game where a very curious AI asks questions about _you_.**
+**The party game where a very curious app asks questions about _you_.**
 
 A hand-drawn, watercolor party game in the spirit of _Psych! Outwit Your Friends_. One person hosts, everyone else joins from their own phone with a 4‑digit code, and the "AI" asks questions about the players… questions that get a little too specific as the game goes on.
 

@@ -35,7 +35,7 @@ export function Home({ onHost, onJoin, resumeHost, resumePlayer, onResumeHost, o
   return html`<div class="screen enter">
     <div class="stack" style="align-items:center;gap:22px">
       <${Logo} />
-      <p class="tagline">The party game where a very curious AI asks questions about <u>you</u>.</p>
+      <p class="tagline">The party game where a very curious app asks questions about <u>you</u>.</p>
 
       ${resumeHost &&
       html`<div class="card resume-card" style="width:100%">

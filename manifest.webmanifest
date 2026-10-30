@@ -1,7 +1,7 @@
 {
   "name": "AI Psych",
   "short_name": "AI Psych",
-  "description": "The party game where a very curious AI asks questions about you.",
+  "description": "The party game where a very curious app asks questions about you.",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",
