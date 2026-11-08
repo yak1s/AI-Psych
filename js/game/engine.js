@@ -262,7 +262,7 @@ function chooseQuestion(room, g, activeIds, ctx) {
 
   // Sometimes the AI uses what it has noticed about the players instead (see dynamic.js).
   const dyn = room.settings.clues !== false ? dynamicCandidates(room, g, activeIds, ctx) : [];
-  if (dyn.length && wantDynamic(room, g, list.length, dyn)) {
+  if (dyn.length && wantDynamic(room, g, list.length, dyn, pool.primary.length > 0)) {
     const usable = dyn.filter((d) => d.level === target); // keeps the slow climb in creepiness
     if (usable.length) {
       const best = Math.min(...usable.map((d) => rank(d.level) + seenScore(room, d.id, activeIds) * 3 + d.weightPenalty));
@@ -288,10 +288,13 @@ export const BOOST_MIN_CLUES = 5;
  * Mix in "the app noticed something" questions: spaced out, and only a share of the game.
  * With "more clue questions" on (and enough clues collected) the share goes up a lot.
  */
-function wantDynamic(room, g, poolLeft, dyn) {
+function wantDynamic(room, g, poolLeft, dyn, deckLeft) {
   const done = g.dynCount || 0;
   const boost = room.settings.moreClues && new Set(dyn.map((d) => d.sim)).size >= BOOST_MIN_CLUES;
-  const share = boost ? (room.deck ? 0.5 : 0.7) : room.deck ? 0.25 : 0.4;
+  // With a deck the custom deck questions come first; once the deck runs out, "extra personal"
+  // prefers these over generic built-in questions.
+  const deck = room.deck && deckLeft;
+  const share = boost ? (deck ? 0.5 : 0.7) : deck ? 0.25 : 0.4;
   const max = Math.max(1, Math.round(g.n * share));
   if (done >= max) return poolLeft === 0;
   const streak = g.lastDynamic === g.idx - 1 ? (g.dynStreak || 1) : 0;
@@ -299,7 +302,7 @@ function wantDynamic(room, g, poolLeft, dyn) {
   if (g.idx === 0) return false; // warm up first
   const left = g.n - g.idx;
   const need = max - done;
-  return need >= left || random() < (boost ? 0.8 : room.deck ? 0.3 : 0.45);
+  return need >= left || random() < (boost ? 0.8 : deck ? 0.3 : 0.45);
 }
 
 // ---------------------------------------------------------------------------

@@ -155,7 +155,8 @@ export function Settings({ ctrl, info, title = 'Game settings' }) {
     <${Toggle} checked=${s.clues !== false} onChange=${(v) => set({ clues: v })} label="Let the app use what it notices (time zones, phones, how people play…) 👀" />
     ${s.clues !== false &&
     html`<${Toggle} checked=${!!s.moreClues} onChange=${(v) => set({ moreClues: v })} testid="more-clues"
-      label="More questions from what it notices (kicks in once it has collected enough)" />`}
+      label="Extra personal: more questions about you, fewer generic ones"
+      hint="Leans on what the app has noticed about the players — with or without a deck. Starts once it has noticed enough." />`}
     ${info.deck && html`<${Toggle} checked=${s.fillStarter} onChange=${(v) => set({ fillStarter: v })} label="Top up with built-in questions if the deck runs out" />`}
   </div>`;
 }

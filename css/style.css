@@ -684,3 +684,21 @@ body.modal-open .screen { z-index: 65; }
 
 .avatar-edit { position: relative; border: 0; background: none; padding: 0; cursor: pointer; }
 .avatar-edit .edit-pencil { position: absolute; right: -4px; bottom: -2px; font-size: 18px; background: var(--card); border: 2px solid var(--ink); border-radius: 50%; width: 30px; height: 30px; display: grid; place-items: center; }
+
+/* Join / host setup: everything (incl. the buttons) fits on one phone screen —
+   the face picker takes whatever height is left and scrolls inside. */
+.setup-screen .stack { gap: 12px; }
+.setup-screen .setup-title { font-size: 32px; margin-top: 0; }
+.setup-screen .card { padding: 14px 16px; gap: 10px; }
+.setup-screen .field { gap: 4px; }
+.setup-screen .field label { font-size: 21px; }
+.setup-screen .code-boxes input { width: 58px; height: 64px; font-size: 34px; }
+.setup-screen .input { padding-top: 8px; padding-bottom: 8px; }
+/* the screen is exactly one phone-height tall; the face picker shrinks to the room that's left */
+.app:has(.setup-screen) { height: 100vh; height: 100dvh; min-height: 0; }
+.setup-screen { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+.setup-screen > .stack { flex: 1 1 auto; min-height: 0; }
+.setup-screen .card { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.setup-screen .card > .field:has(.avatar-pick), .setup-screen .picker-wrap { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.setup-screen .avatar-pick { flex: 0 1 260px; min-height: 100px; max-height: 260px; gap: 8px; padding: 6px; }
+.avatar-pick button .avatar { --size: min(52px, calc((100vw - 150px) / 5)); }

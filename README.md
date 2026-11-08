@@ -63,7 +63,7 @@ Switch to another app mid-game and the game reminds you (a notification where th
 - Number of questions: 5 / 10 / 15
 - **Time limit**: Off, Chill (2:00 to write / 1:00 to vote), Normal (1:30 / 0:45) or Fast (1:00 / 0:30). With a limit the game moves on by itself: unsent text is submitted automatically. If someone submitted and then started editing, the original submitted answer counts.
 - "The person asked about writes an answer too" (on by default)
-- "Let the app use what it notices" — the clue questions (on by default), and "More questions from what it notices" (off by default)
+- "Let the app use what it notices" — the clue questions (on by default), and "Extra personal: more questions about you, fewer generic ones" (off by default)
 - Top up with built-in questions if the deck runs out
 
 ---
@@ -96,7 +96,7 @@ From that, the app writes questions **only when the clues make them interesting*
 - *Mia has typed and deleted 212 letters in her answers so far. What did Mia write and then erase?*
 - *It's 1:12 AM where Sam is. Why is Sam still awake?*
 
-There are 79 kinds of clue questions with 159 different wordings. They're grouped by category (place, device, language, network, time, habits, the group), each with a per-game cap, and similar ones share a group so they never show up in the same game. They're mixed in at the right creepiness level, spread over different people, and never twice in a row. Turn them off in the settings — or turn on **More questions from what it notices**: once the app has collected enough clues (at least 5 different situations), up to about 70% of the game comes from them (50% with a deck).
+There are 79 kinds of clue questions with 159 different wordings. They're grouped by category (place, device, language, network, time, habits, the group), each with a per-game cap, and similar ones share a group so they never show up in the same game. They're mixed in at the right creepiness level, spread over different people, and never twice in a row. Turn them off in the settings — or turn on **Extra personal**: once the app has collected enough clues (at least 5 different situations), up to about 70% of the game comes from them instead of generic built-in questions. With a deck, your deck questions still come first (clues take up to about half), and once the deck runs out the game leans on clues rather than generic built-in questions.
 
 ### Questions are never repeated
 

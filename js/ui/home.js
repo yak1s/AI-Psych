@@ -63,7 +63,7 @@ export function Home({ onHost, onJoin, resumeHost, resumePlayer, onResumeHost, o
 }
 
 export function AvatarPicker({ value, onChange }) {
-  return html`<div class="stack" style="gap:8px">
+  return html`<div class="stack picker-wrap" style="gap:8px">
     <div class="avatar-pick" role="radiogroup" aria-label="Pick your avatar">
       ${AVATARS.map(
         (a, i) => html`<button key=${a} role="radio" aria-checked=${value === a} class=${value === a ? 'on' : ''}
@@ -98,9 +98,9 @@ export function HostSetup({ onBack, onCreate }) {
     prof.save();
     onCreate({ name: prof.name.trim(), avatar: prof.avatar });
   };
-  return html`<div class="screen enter">
+  return html`<div class="screen enter setup-screen">
     <div class="stack">
-      <h1 class="center" style="font-size:36px;margin-top:8px">Host a game</h1>
+      <h1 class="center setup-title">Host a game</h1>
       <div class="card tilt-l stack">
         <${NameField} prof=${prof} error=${err} autoFocus />
         <div class="field"><label>Pick a face</label><${AvatarPicker} value=${prof.avatar} onChange=${prof.setAvatar} /></div>
@@ -165,9 +165,9 @@ export function JoinForm({ initialCode = '', error, onBack, onJoin }) {
     prof.save();
     onJoin(code, { name: prof.name.trim(), avatar: prof.avatar });
   };
-  return html`<div class="screen enter">
+  return html`<div class="screen enter setup-screen">
     <div class="stack">
-      <h1 class="center" style="font-size:36px;margin-top:8px">Join a game</h1>
+      <h1 class="center setup-title">Join a game</h1>
       <div class="card tilt-r stack">
         <div class="field"><label>Room code</label><${CodeBoxes} value=${code} onChange=${(c) => { setCode(c); setErr(null); }} /></div>
         <${NameField} prof=${prof} error=${err && err !== 'code'} autoFocus=${initialCode.length === 4} />
