@@ -165,7 +165,7 @@ function useReminders(ctrl, view) {
 
 function GameScreen({ ctrl, view }) {
   const g = view.game;
-  if (!g) return ctrl.isHost ? html`<${HostLobby} ctrl=${ctrl} view=${view} />` : html`<${PlayerLobby} view=${view} />`;
+  if (!g) return ctrl.isHost ? html`<${HostLobby} ctrl=${ctrl} view=${view} />` : html`<${PlayerLobby} ctrl=${ctrl} view=${view} />`;
   let body;
   if (g.phase === 'answer') body = html`<${AnswerPhase} ctrl=${ctrl} view=${view} />`;
   else if (g.phase === 'vote') body = html`<${VotePhase} ctrl=${ctrl} view=${view} />`;

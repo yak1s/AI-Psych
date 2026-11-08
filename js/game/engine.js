@@ -8,7 +8,7 @@ import { STARTER } from './starter.js';
 import { dynamicCandidates } from './dynamic.js';
 
 export const MAX_PLAYERS = 30;
-export const MIN_PLAYERS = 2;
+export const MIN_PLAYERS = 3;
 export const TIMER_MS = 45000;
 export const HOST_TIMER_CHOICES = [30, 45, 60];
 /** Hard time limits (seconds): auto-submit what's typed and move on. */
@@ -21,8 +21,7 @@ export const TIME_LIMITS = {
 const INTRO_MS = 4500; // the "AI is writing" intro before anyone can type
 const DEAL_MS = 650; // per answer card dealt on the voting screen
 const GRACE_MS = 1500; // let the last keystrokes arrive before a hard timer fires
-const EXTRA_STEP_MS = 5000; // a time limit runs out while someone is reconnecting: wait a bit…
-const EXTRA_MAX_MS = 25000; // …but never more than this in total
+export const RECONNECT_GRACE_MS = 10000; // a time limit runs out while someone is reconnecting: 10 more seconds, once
 export const LAST_CHANCE_MS = 10000; // first time someone runs out of time to vote in a game: one warning + 10s
 export const ROUND_CHOICES = [5, 10, 15];
 export const ANSWER_MAX = 120;
@@ -34,7 +33,8 @@ export const AVATARS = [
   '🍕', '🧁', '🌵', '👻', '🤖', '🦩', '🐳', '🍩', '🐧', '🦁', '🐯', '🐨', '🐰', '🦔', '🦥', '🦦',
   '🐌', '🦋', '🐞', '🦈', '🐬', '🦜', '🦚', '🐲', '🦕', '🍉', '🍍', '🥨', '🧀', '🍪', '🍿', '🥐',
   '🎩', '👑', '🕶️', '🎸', '🎨', '📸', '🎮', '🚀', '⚽', '🎈', '🌈', '🌻', '🍄', '⭐', '🔮', '🧸',
-];
+  '🐻',
+]; // 65 = 13 full rows of 5 in the picker
 export const COLORS = ['coral', 'sky', 'sun', 'mint', 'grape', 'bubblegum', 'tangerine', 'leaf', 'ocean', 'rose', 'lime', 'indigo', 'peach', 'aqua', 'lilac', 'gold',
   'berry', 'forest', 'denim', 'apricot', 'moss', 'sand', 'cocoa', 'slate', 'fuchsia', 'cyan', 'jade', 'ruby', 'amber', 'violet'];
 
@@ -52,7 +52,7 @@ export function createRoom({ code, host }) {
     deck: null,
     assign: {},
     used: [],
-    settings: { rounds: 10, subjectAnswers: true, fillStarter: true, clues: true, timeLimit: 'off' },
+    settings: { rounds: 10, subjectAnswers: true, fillStarter: true, clues: true, moreClues: false, timeLimit: 'off' },
     awardsGiven: [],
     gamesPlayed: 0,
     game: null,
@@ -262,7 +262,7 @@ function chooseQuestion(room, g, activeIds, ctx) {
 
   // Sometimes the AI uses what it has noticed about the players instead (see dynamic.js).
   const dyn = room.settings.clues !== false ? dynamicCandidates(room, g, activeIds, ctx) : [];
-  if (dyn.length && wantDynamic(room, g, list.length)) {
+  if (dyn.length && wantDynamic(room, g, list.length, dyn)) {
     const usable = dyn.filter((d) => d.level === target); // keeps the slow climb in creepiness
     if (usable.length) {
       const best = Math.min(...usable.map((d) => rank(d.level) + seenScore(room, d.id, activeIds) * 3 + d.weightPenalty));
@@ -281,17 +281,25 @@ function chooseQuestion(room, g, activeIds, ctx) {
   return pick(scored.filter((x) => x.s === min));
 }
 
-/** Mix in "the AI noticed something" questions: spaced out, and only a share of the game. */
-function wantDynamic(room, g, poolLeft) {
+/** Enough different clues collected for "more clue questions" to kick in. */
+export const BOOST_MIN_CLUES = 5;
+
+/**
+ * Mix in "the app noticed something" questions: spaced out, and only a share of the game.
+ * With "more clue questions" on (and enough clues collected) the share goes up a lot.
+ */
+function wantDynamic(room, g, poolLeft, dyn) {
   const done = g.dynCount || 0;
-  const share = room.deck ? 0.25 : 0.4;
+  const boost = room.settings.moreClues && new Set(dyn.map((d) => d.sim)).size >= BOOST_MIN_CLUES;
+  const share = boost ? (room.deck ? 0.5 : 0.7) : room.deck ? 0.25 : 0.4;
   const max = Math.max(1, Math.round(g.n * share));
   if (done >= max) return poolLeft === 0;
-  if (g.lastDynamic === g.idx - 1) return poolLeft === 0; // never two in a row
+  const streak = g.lastDynamic === g.idx - 1 ? (g.dynStreak || 1) : 0;
+  if (streak >= (boost ? 2 : 1)) return poolLeft === 0; // never too many in a row
   if (g.idx === 0) return false; // warm up first
   const left = g.n - g.idx;
   const need = max - done;
-  return need >= left || random() < (room.deck ? 0.3 : 0.45);
+  return need >= left || random() < (boost ? 0.8 : room.deck ? 0.3 : 0.45);
 }
 
 // ---------------------------------------------------------------------------
@@ -351,6 +359,8 @@ function beginQuestion(room, ctx) {
     g.dynCount = (g.dynCount || 0) + 1;
     g.dynCats = g.dynCats || {};
     g.dynCats[d.cat] = (g.dynCats[d.cat] || 0) + 1;
+    g.dynSims = [...(g.dynSims || []), d.sim];
+    g.dynStreak = g.lastDynamic === g.idx - 1 ? (g.dynStreak || 1) + 1 : 1;
     g.lastDynamic = g.idx;
   } else {
     ({ q, m } = choice);
@@ -658,9 +668,9 @@ export function tick(room, ctx) {
   const g = room.game;
   if (!g || !g.timer || !g.timer.hard || ctx.now < g.timer.endsAt + GRACE_MS) return false;
   const flaky = ctx.flaky ? missingNow(room).filter((p) => ctx.flaky.has(p)) : [];
-  if (flaky.length && (g.timer.extra || 0) < EXTRA_MAX_MS) {
-    g.timer.extra = (g.timer.extra || 0) + EXTRA_STEP_MS;
-    g.timer.endsAt = ctx.now + EXTRA_STEP_MS - GRACE_MS;
+  if (flaky.length && !g.timer.extra) {
+    g.timer.extra = RECONNECT_GRACE_MS;
+    g.timer.endsAt = ctx.now + RECONNECT_GRACE_MS - GRACE_MS;
     g.timer.waiting = flaky;
     room.seq++;
     return true;
@@ -782,13 +792,19 @@ function applyInner(room, pid, action, ctx) {
     }
     case 'leave':
       return removePlayer(room, pid, 'left', ctx);
+    case 'avatar': {
+      // pick a different face while waiting in the lobby
+      if (!AVATARS.includes(action.avatar)) return { ok: false, error: 'bad-avatar' };
+      p.avatar = action.avatar;
+      return { ok: true };
+    }
 
     // ---- host only ----
     case 'settings': {
       const s = room.settings;
       const a = action.settings || {};
       if (ROUND_CHOICES.includes(a.rounds)) s.rounds = a.rounds;
-      for (const k of ['subjectAnswers', 'fillStarter', 'clues']) if (typeof a[k] === 'boolean') s[k] = a[k];
+      for (const k of ['subjectAnswers', 'fillStarter', 'clues', 'moreClues']) if (typeof a[k] === 'boolean') s[k] = a[k];
       if (a.timeLimit in TIME_LIMITS) s.timeLimit = a.timeLimit;
       return { ok: true };
     }

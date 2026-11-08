@@ -4,14 +4,14 @@
 
 A hand-drawn, watercolor party game in the spirit of _Psych! Outwit Your Friends_. One person hosts, everyone else joins from their own phone with a 4‑digit code, and the "AI" asks questions about the players… questions that get a little too specific as the game goes on.
 
-(The secret: the host uploaded the questions beforehand 🤫 — or the AI simply *noticed* things: whose phone is in another country, who is the only one on an iPhone, who keeps leaving the app…)
+(The secret: the host uploaded the questions beforehand 🤫 — or the app simply *noticed* things: whose phone is in another country, who is the only one on an iPhone, who keeps leaving the app…)
 
 - 🎨 Hand-drawn watercolor look, lots of animation, synthesized sound effects and vibrations (every device can mute itself)
 - 📱 No accounts, no install, no server to run — a static site that works on GitHub Pages
 - 🌐 Plays in Chrome, Safari, Edge and Samsung Internet (phones and computers). Firefox isn't supported: it shows a friendly page asking to open the link in Chrome (Firefox on iPhone is fine — it's Safari inside).
 - 🔁 Survives refreshes, dropped connections and phones going to sleep. **If the host's phone dies, another player takes over and the game goes on.**
-- 👥 2–30 players, games of 5, 10 or 15 questions
-- 👀 150 built-in questions **plus questions built from what the AI notices** (time zones, phones, languages, how people play)
+- 👥 3–30 players, games of 5, 10 or 15 questions
+- 👀 241 built-in questions **plus 79 kinds of questions built from what the app notices** (time zones, phones, languages, how people play)
 - ✨ Make a custom deck in minutes: fill in a few details, copy the ready-made prompt into ChatGPT / Gemini / Claude, paste the answer back
 - 💬 Waiting-room chat with emoji reactions, reminders when it's your turn, full screen on phones
 
@@ -32,7 +32,7 @@ A hand-drawn, watercolor party game in the spirit of _Psych! Outwit Your Friends
 
 ## How to play
 
-1. **Host**: open the site, tap **Host a game**, pick a name and a face. A 4‑digit room code appears.
+1. **Host**: open the site, tap **Host a game**, pick a name and a face. A 4‑digit room code appears. (Waiting in the lobby, anyone can tap their own face to pick another one.)
 2. **Everyone else**: open the same site, tap **Join with a code**, type the code (or scan the QR / use the share link), pick a name and a face.
 3. The host picks **5, 10 or 15 questions** and presses **Start**.
 4. Each round:
@@ -53,7 +53,7 @@ Switch to another app mid-game and the game reminds you (a notification where th
 
 - ⏱ **Timer (30 / 45 / 60 s)**: puts a countdown on everyone's screen. When it runs out, nothing happens automatically: the host sees who's missing and decides to **move on** (anything they had typed is sent for them), **add more time**, or keep waiting.
 - ⏭ **Vote now / Results**: end the writing or voting part right away (whatever was typed or picked is sent).
-- ⏩ **Skip question**: throws away the current answers and the AI writes a brand-new question for the same round.
+- ⏩ **Skip question**: throws away the current answers and the app writes a brand-new question for the same round.
 - 👥 **Players**: kick someone mid-game, and match a late joiner to a name in the deck.
 - 🛎️ **Let people in**: once a game is running, newcomers wait for the host's OK; then everyone sees a welcome and the newcomer plays from the next question. Joining with the name of a player who got disconnected (new phone, cleared browser) asks the host to give them back their seat — with their score.
 - **Next anyway** on the results screen if someone wandered off, **End game** to go back to the lobby.
@@ -63,7 +63,7 @@ Switch to another app mid-game and the game reminds you (a notification where th
 - Number of questions: 5 / 10 / 15
 - **Time limit**: Off, Chill (2:00 to write / 1:00 to vote), Normal (1:30 / 0:45) or Fast (1:00 / 0:30). With a limit the game moves on by itself: unsent text is submitted automatically. If someone submitted and then started editing, the original submitted answer counts.
 - "The person asked about writes an answer too" (on by default)
-- "Let the AI use what it notices" — the clue questions (on by default)
+- "Let the app use what it notices" — the clue questions (on by default), and "More questions from what it notices" (off by default)
 - Top up with built-in questions if the deck runs out
 
 ---
@@ -79,24 +79,24 @@ After uploading, the host **matches each predicted player to someone who actuall
 
 During a game, questions are picked at random but the creepiness **climbs slowly from the lowest level to the highest**. The game also spreads questions across players so nobody gets asked about every round. Questions are never reused in the same room, even across games.
 
-Without a deck, the AI uses its 150 built-in questions (with random players) and its clue questions (below).
+Without a deck, the app uses its 241 built-in questions (with random players) and its clue questions (below).
 
 ### Make a deck with AI
 
-In the deck panel, tap **✨ Make a deck with AI**. Fill in whatever you like (all optional): the occasion, where and when, how everyone is connected, a few words about each player, anything off limits, how many questions, and the language. Tap **Copy the prompt**, paste it into ChatGPT, Gemini or Claude, then copy the AI's whole reply and paste it into **step 2**. The game cleans up the usual chat-AI mistakes by itself (code fences, chatter around the JSON, trailing commas, an answer cut off halfway). You can still **download the template** and write a deck by hand.
+The lobby's deck panel explains the idea and gives two ways to make one — or upload a deck you already have. Tap **✨ Make one with AI**. Fill in whatever you like (all optional): the occasion, where and when, how everyone is connected, a few words about each player, anything off limits, how many questions (30, 60 or 100), and the language. Tap **Copy the prompt**, paste it into ChatGPT, Gemini or Claude, then copy the AI's whole reply and paste it into **step 2**. The game cleans up the usual chat-AI mistakes by itself (code fences, chatter around the JSON, trailing commas, an answer cut off halfway). You can still **download the template** and write a deck by hand.
 
-## What the AI notices (clue questions)
+## What the app notices (clue questions)
 
 Without anyone typing anything, each device quietly shares a few clues with the host (and only the host): its time zone and rough location (city level, from the internet connection — no location permission), its languages, phone or computer and which kind, dark mode, battery level, Wi‑Fi or mobile data, and a one-way fingerprint of its network (so the game can tell who's on the same Wi‑Fi without knowing the address). During the game the host also notices how people play: typing speed, how much they delete, how fast they vote, who keeps leaving the app, who answers first or last, who keeps voting for whom, who chats the most, who joined late.
 
-From that, the AI writes questions **only when the clues make them interesting**, for example:
+From that, the app writes questions **only when the clues make them interesting**, for example:
 
 - *Everyone here is in the US… except Grandma, who is somewhere in Brazil. What is Grandma really doing there?*
 - *Leo is the only one on an iPhone. What would it take for Leo to give it up and join the Android side?*
 - *Mia has typed and deleted 212 letters in her answers so far. What did Mia write and then erase?*
 - *It's 1:12 AM where Sam is. Why is Sam still awake?*
 
-Clue questions are grouped by category (place, device, language, network, time, habits, the group), each with a per-game cap, so one game never turns into ten location questions. They're mixed in at the right creepiness level and never twice in a row. Turn them off in the settings.
+There are 79 kinds of clue questions with 159 different wordings. They're grouped by category (place, device, language, network, time, habits, the group), each with a per-game cap, and similar ones share a group so they never show up in the same game. They're mixed in at the right creepiness level, spread over different people, and never twice in a row. Turn them off in the settings — or turn on **More questions from what it notices**: once the app has collected enough clues (at least 5 different situations), up to about 70% of the game comes from them (50% with a deck).
 
 ### Questions are never repeated
 
@@ -188,7 +188,7 @@ Any static host works too (Netlify, Cloudflare Pages, `python3 -m http.server`�
 - **Self-healing.** Both sides send heartbeats every 2 s. A silent connection (phone asleep, Wi‑Fi hiccup, tunnel) is detected in ~9 s and replaced with a fresh one, retrying with backoff forever. Actions (answers, votes, "ready") are queued and retried until the host acknowledges them, and the host de-duplicates them. So an answer submitted while offline is delivered when the connection comes back.
 - **Closed the tab?** Open the site again and tap **Rejoin** (or **Resume** for the host). Lost the phone? Join from another device with the same name and the host gives you your seat back.
 - **The host disappears? The game goes on.** The host keeps a compressed backup of the whole game on the next two devices in line. If nobody can reach the host for 25 seconds (and that device itself is online), the first one takes over hosting; everyone's devices find the new host by themselves (each hand-over gets a new address, announced over the encrypted relay), running clocks restart with the time that was left, and answers already sent are kept. When the old host comes back, it notices and rejoins as a normal player.
-- **The host's connection is down? Nobody loses their turn.** While the host can't reach anyone, the clock stops. When a time limit runs out on someone whose connection just dropped, the game waits a few extra seconds for them.
+- **The host's connection is down? Nobody loses their turn.** While the host can't reach anyone, the clock stops. Players see the clock paused while they can't reach the host. When a time limit runs out on a player whose own connection just dropped, the game gives them 10 extra seconds to reconnect.
 
 ### Self-hosting the signaling server (optional)
 

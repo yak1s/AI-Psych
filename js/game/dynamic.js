@@ -71,10 +71,10 @@ function km(a, b) {
 
 function localParts(tz, now) {
   try {
-    const f = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', weekday: 'long', hour12: true, month: 'numeric' });
+    const f = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', weekday: 'long', hour12: true, month: 'numeric', day: 'numeric' });
     const parts = Object.fromEntries(f.formatToParts(new Date(now)).map((p) => [p.type, p.value]));
     const h24 = Number(new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hourCycle: 'h23' }).format(new Date(now)));
-    return { hour: h24, time: `${parts.hour}:${parts.minute} ${parts.dayPeriod || ''}`.trim(), weekday: parts.weekday, month: Number(parts.month) };
+    return { hour: h24, time: `${parts.hour}:${parts.minute} ${parts.dayPeriod || ''}`.trim(), weekday: parts.weekday, month: Number(parts.month), day: Number(parts.day) };
   } catch {
     return null;
   }
@@ -130,7 +130,7 @@ const T = [
     id: 'place-odd-country', cat: 'place', level: 4,
     text: [
       'Everyone here is in [others]… except {p1}, who is somewhere in [place]. What is {p1} really doing there?',
-      'The AI traced every phone to [others] — except {p1}\'s, which is in [place]. What is {p1} not telling everyone about this trip?',
+      'The app traced every phone to [others] — except {p1}\'s, which is in [place]. What is {p1} not telling everyone about this trip?',
     ],
     when(d) {
       const o = oddOneOut(d.ids, (p) => d.sig(p).country);
@@ -183,7 +183,7 @@ const T = [
   },
   {
     id: 'place-city', cat: 'place', level: 5,
-    text: ["The AI knows {p1} is near [city]. What's the place there {p1} goes to that nobody in this game knows about?"],
+    text: ["The app knows {p1} is near [city]. What's the place there {p1} goes to that nobody in this game knows about?"],
     when(d) {
       const ids = d.ids.filter((p) => d.sig(p).city && d.sig(p).precise);
       if (ids.length < 2) return null;
@@ -436,7 +436,7 @@ const T = [
     id: 'habit-deleter', cat: 'habit', level: 5,
     text: [
       '{p1} has typed and deleted [n] letters in their answers so far. What did {p1} write and then erase?',
-      'The AI saw {p1} delete a whole answer and start over. What did the first version say?',
+      'The app saw {p1} delete a whole answer and start over. What did the first version say?',
     ],
     when(d) {
       const t = top(d.ids, (p) => d.st(p).dels || 0, { min: 25 });
@@ -585,7 +585,7 @@ const T = [
   },
   {
     id: 'group-most-asked', cat: 'group', level: 5,
-    text: ['The AI has asked about {p1} [n] times tonight. What is the AI going to find out about {p1} next?'],
+    text: ['The app has asked about {p1} [n] times tonight. What is the app going to find out about {p1} next?'],
     when(d) {
       const t = top(d.ids, (p) => (d.g && d.g.featured && d.g.featured[p]) || 0, { min: 3 });
       return t ? { bind: { p1: t.pid }, vars: { n: t.value } } : null;
@@ -593,7 +593,7 @@ const T = [
   },
   {
     id: 'group-never-asked', cat: 'group', level: 4,
-    text: ["The AI hasn't asked a single question about {p1} yet. What is {p1} hiding that keeps the AI away?"],
+    text: ["The app hasn't asked a single question about {p1} yet. What is {p1} hiding that keeps the app away?"],
     when(d) {
       if (!d.g || d.g.idx < 4) return null;
       const c = d.ids.filter((p) => !(d.g.featured && d.g.featured[p]));
@@ -626,7 +626,403 @@ const T = [
       return c.length === 1 ? { bind: { p1: c[0] } } : null;
     },
   },
+  // ------------------------------------------------------------------ more places
+  {
+    id: 'place-host-away', cat: 'place', level: 4, sim: 'place-odd',
+    text: [
+      'Everyone else is in [others], but our host {p1} is running this game from [place]. Why did {p1} really have to be so far away tonight?',
+      "{p1} is hosting from [place] while everyone else is in [others]. What is {p1} going to bring back to apologize?",
+    ],
+    when(d) {
+      const o = oddOneOut(d.ids, (p) => d.sig(p).country);
+      return o && o.pid === d.hostPid ? { bind: { p1: o.pid }, vars: { place: d.sig(o.pid).countryName || o.value, others: d.sig(o.othersIds[0]).countryName || o.others } } : null;
+    },
+  },
+  {
+    id: 'place-split', cat: 'place', level: 3, sim: 'place-split',
+    text: [
+      "Tonight's game is split between [c1] and [c2]. What does {p1} secretly envy about {p2}'s side?",
+      '{p1} is in [c1], {p2} is in [c2]. What would {p1} smuggle across to {p2} if nobody checked the bags?',
+    ],
+    when(d) {
+      const g = groupBy(d.ids, (p) => d.sig(p).country);
+      if (g.size !== 2) return null;
+      const [[c1, a], [c2, b]] = [...g.entries()];
+      if (a.length < 2 || b.length < 2) return null;
+      return { bind: { p1: a[Math.floor(random() * a.length)], p2: b[Math.floor(random() * b.length)] }, vars: { c1: d.sig(a[0]).countryName || c1, c2: d.sig(b[0]).countryName || c2 } };
+    },
+  },
+  {
+    id: 'place-many-countries', cat: 'place', level: 2, sim: 'place-many',
+    text: [
+      'This game is happening in [n] countries at once. What is {p1} going to bring back for everyone — and what will {p1} quietly keep?',
+      'Players in [n] different countries tonight. Which country would {p1} move to tomorrow if nobody could stop them?',
+    ],
+    when(d) {
+      const g = groupBy(d.ids, (p) => d.sig(p).country);
+      if (g.size < 3) return null;
+      return { bind: { p1: d.ids[Math.floor(random() * d.ids.length)] }, vars: { n: g.size } };
+    },
+  },
+  {
+    id: 'place-neighbors', cat: 'place', level: 3, sim: 'place-pair',
+    text: [
+      '{p1} and {p2} are only about [km] km apart right now. Who would show up at the other one\'s door uninvited first, and why?',
+      'The app measured it: {p1} and {p2} are about [km] km apart. What did {p1} borrow from {p2} and never give back?',
+    ],
+    when(d) {
+      let best = null;
+      for (let i = 0; i < d.ids.length; i++)
+        for (let j = i + 1; j < d.ids.length; j++) {
+          const k = km(d.sig(d.ids[i]).ll, d.sig(d.ids[j]).ll);
+          if (k != null && k > 2 && (!best || k < best.k)) best = { k, a: d.ids[i], b: d.ids[j] };
+        }
+      if (!best || best.k > 60) return null;
+      const far = d.ids.some((p) => p !== best.a && p !== best.b && km(d.sig(p).ll, d.sig(best.a).ll) > 300);
+      return far ? { bind: { p1: best.a, p2: best.b }, vars: { km: Math.max(1, Math.round(best.k)) } } : null;
+    },
+  },
+
+  // ------------------------------------------------------------------ more devices
+  {
+    id: 'dev-odd-brand', cat: 'device', level: 2, sim: 'dev-os',
+    text: [
+      'Everyone else has a [others] phone. {p1} has a [brand]. What is {p1} trying to prove?',
+      "{p1} is the only one here with a [brand]. What does {p1} say every time someone mentions [others]?",
+    ],
+    when(d) {
+      const o = oddOneOut(d.ids.filter((p) => d.sig(p).device === 'phone'), (p) => d.sig(p).brand);
+      return o && o.value !== 'Android' && o.others !== 'Android' && o.value !== o.others ? { bind: { p1: o.pid }, vars: { brand: o.value, others: o.others } } : null;
+    },
+  },
+  {
+    id: 'dev-only-mac', cat: 'device', level: 3, sim: 'dev-computer',
+    text: [
+      "{p1} is the only one on a Mac. What does {p1} mutter every time someone says 'PC'?",
+      "Out of everyone on a computer, only {p1} uses a Mac. What's the most expensive thing {p1} bought just because it was shiny?",
+    ],
+    when(d) {
+      const comps = d.ids.filter((p) => d.sig(p).device === 'computer');
+      if (comps.length < 2) return null;
+      const o = oddOneOut(comps, (p) => (d.sig(p).os === 'macOS' ? 'mac' : 'other'));
+      return o && o.value === 'mac' ? { bind: { p1: o.pid } } : null;
+    },
+  },
+  {
+    id: 'dev-vintage', cat: 'device', level: 2, sim: 'dev-age',
+    text: [
+      "The app thinks {p1}'s phone is… experienced. What year does that phone think it is?",
+      "{p1}'s device is the oldest in the room. What would it say about {p1} if it could finally retire?",
+    ],
+    when(d) {
+      const t = top(d.ids, (p) => (d.sig(p).memory ? d.sig(p).memory : null), { min: 2, low: true });
+      return t && t.runnerUp != null && t.runnerUp >= 4 ? { bind: { p1: t.pid } } : null;
+    },
+  },
+  {
+    id: 'dev-powerhouse', cat: 'device', level: 3, sim: 'dev-age',
+    text: ['{p1} has the most powerful device in the room. What does {p1} actually use all that power for?'],
+    when(d) {
+      const t = top(d.ids, (p) => (d.sig(p).cores && d.sig(p).memory ? d.sig(p).cores * d.sig(p).memory : null), { min: 32 });
+      return t && t.runnerUp != null && t.value >= t.runnerUp * 2 ? { bind: { p1: t.pid } } : null;
+    },
+  },
+  {
+    id: 'dev-full-battery', cat: 'device', level: 2, sim: 'battery',
+    text: [
+      "{p1}'s phone is at [pct]% while everyone else is draining. Who taught {p1} to be this prepared?",
+      "{p1} showed up with a fully charged phone. What is {p1} planning to outlast?",
+    ],
+    when(d) {
+      const known = d.ids.filter((p) => d.sig(p).battery);
+      if (known.length < 3) return null;
+      const t = top(known, (p) => (!d.sig(p).battery.charging ? d.sig(p).battery.level : null), { min: 95 });
+      return t && t.runnerUp != null && t.runnerUp < 70 ? { bind: { p1: t.pid }, vars: { pct: n(t.value) } } : null;
+    },
+  },
+  {
+    id: 'dev-light-mode', cat: 'device', level: 3, sim: 'dark',
+    text: ['Everyone else uses dark mode. {p1} plays with a bright white screen. What is {p1} not afraid of?'],
+    when(d) {
+      const o = oddOneOut(d.ids, (p) => (d.sig(p).dark == null ? null : d.sig(p).dark ? 'dark' : 'light'));
+      return o && o.value === 'light' ? { bind: { p1: o.pid } } : null;
+    },
+  },
+  {
+    id: 'dev-two-phones-alike', cat: 'device', level: 3, sim: 'dev-pair',
+    text: ["{p1} and {p2} are the only two on a [os] device. What do they talk about when the others aren't around?"],
+    when(d) {
+      const p = onlyPair(d.ids, (x) => d.sig(x).os || null);
+      return p ? { bind: { p1: p.pids[0], p2: p.pids[1] }, vars: { os: p.value } } : null;
+    },
+  },
+
+  // ------------------------------------------------------------------ more languages / network / time
+  {
+    id: 'lang-pair', cat: 'lang', level: 3, sim: 'lang-pair',
+    text: ["Only {p1} and {p2} have their phones in [lang]. What are they saying about everyone else in [lang]?"],
+    when(d) {
+      const p = onlyPair(d.ids, (x) => langName(d.sig(x).lang));
+      return p ? { bind: { p1: p.pids[0], p2: p.pids[1] }, vars: { lang: p.value } } : null;
+    },
+  },
+  {
+    id: 'net-all-same', cat: 'net', level: 3, sim: 'net-same',
+    text: [
+      "Everyone here is on the same internet connection. What has {p1} been downloading on it all night?",
+      'Same Wi-Fi for everyone tonight. Whose fault is it, honestly, when it gets slow — and what is {p1} streaming?',
+    ],
+    when(d) {
+      const g = groupBy(d.ids, (p) => d.sig(p).netId || null);
+      if (g.size !== 1 || [...g.values()][0].length < 3 || [...g.values()][0].length !== d.ids.length) return null;
+      return { bind: { p1: d.ids[Math.floor(random() * d.ids.length)] } };
+    },
+  },
+  {
+    id: 'net-mobile-low-battery', cat: 'net', level: 4, sim: 'battery',
+    text: ["{p1} is on mobile data with [pct]% battery left. Where exactly is {p1} right now — and who are they hiding from?"],
+    when(d) {
+      const c = d.ids.filter((p) => d.sig(p).conn === 'cellular' && d.sig(p).battery && !d.sig(p).battery.charging && d.sig(p).battery.level < 35);
+      return c.length === 1 ? { bind: { p1: c[0] }, vars: { pct: d.sig(c[0]).battery.level } } : null;
+    },
+  },
+  {
+    id: 'time-tomorrow', cat: 'time', level: 4, sim: 'time-diff',
+    text: [
+      "It's already [d1] for {p1}, but still [d2] for {p2}. What does {p1} know about tomorrow that {p2} doesn't?",
+      '{p1} is living in tomorrow ([d1]) while {p2} is stuck in [d2]. What should {p1} warn {p2} about?',
+    ],
+    when(d) {
+      const ids = d.ids.filter((p) => d.local[p] && d.local[p].day);
+      for (const a of ids)
+        for (const b of ids)
+          if (a !== b && d.local[a].weekday !== d.local[b].weekday && (d.local[a].day > d.local[b].day || (d.local[a].day === 1 && d.local[b].day >= 28)))
+            return { bind: { p1: a, p2: b }, vars: { d1: d.local[a].weekday, d2: d.local[b].weekday } };
+      return null;
+    },
+  },
+  {
+    id: 'time-weekend-night', cat: 'time', level: 3, sim: 'time-night',
+    text: [
+      "It's [day] night where {p1} is, and {p1} is playing a party game on a phone. What did {p1} cancel to be here?",
+      "[day] night, [time], and {p1} is here with us. Who did {p1} tell they were 'busy tonight'?",
+    ],
+    when(d) {
+      const c = d.ids.filter((p) => d.local[p] && ['Friday', 'Saturday'].includes(d.local[p].weekday) && d.local[p].hour >= 20);
+      if (!c.length) return null;
+      const pid = c[Math.floor(random() * c.length)];
+      return { bind: { p1: pid }, vars: { day: d.local[pid].weekday, time: d.local[pid].time } };
+    },
+  },
+  {
+    id: 'time-lunch', cat: 'time', level: 2, sim: 'time-meal',
+    text: ["It's lunchtime where {p1} is. What is {p1} eating right now that they would never post a photo of?"],
+    when(d) {
+      const c = d.ids.filter((p) => d.local[p] && d.local[p].hour >= 12 && d.local[p].hour < 14);
+      return c.length === 1 ? { bind: { p1: c[0] } } : null;
+    },
+  },
+
+  // ------------------------------------------------------------------ more habits
+  {
+    id: 'habit-clock-grabbed', cat: 'habit', level: 3, sim: 'habit-slow',
+    text: ['The clock had to grab {p1}\'s answer [n] times tonight. What was {p1} doing instead of typing?'],
+    when(d) {
+      const t = top(d.ids, (p) => d.H.filter((h) => h.entries.some((e) => e.pid === p && e.auto)).length, { min: 2 });
+      return t ? { bind: { p1: t.pid }, vars: { n: t.value } } : null;
+    },
+  },
+  {
+    id: 'habit-never-votes-for', cat: 'habit', level: 4, sim: 'habit-votes',
+    text: [
+      "{p1} has had [n] chances and never once voted for {p2}'s answer. What did {p2} do to {p1}?",
+      "Not a single vote from {p1} to {p2} in [n] rounds. What is {p1} still holding against {p2}?",
+    ],
+    when(d) {
+      if (d.H.length < 4) return null;
+      const cand = [];
+      for (const a of d.ids)
+        for (const b of d.ids) {
+          if (a === b) continue;
+          const chances = d.H.filter((h) => h.votes.some(([v]) => v === a) && h.entries.some((e) => e.pid === b)).length;
+          const hits = d.H.filter((h) => h.votes.some(([v, x]) => v === a && x === b)).length;
+          if (chances >= 4 && !hits) cand.push({ a, b, chances });
+        }
+      if (!cand.length) return null;
+      const c = cand.sort((x, y) => y.chances - x.chances)[0];
+      return { bind: { p1: c.a, p2: c.b }, vars: { n: c.chances } };
+    },
+  },
+  {
+    id: 'habit-mutual-votes', cat: 'habit', level: 4, sim: 'habit-votes',
+    text: [
+      '{p1} and {p2} keep voting for each other. What did they agree on before the game started?',
+      "The app noticed {p1} and {p2} trading votes all night. What is {p2} getting out of this deal?",
+    ],
+    when(d) {
+      const c = {};
+      for (const h of d.H) for (const [v, a] of h.votes) c[v + '|' + a] = (c[v + '|' + a] || 0) + 1;
+      for (const a of d.ids)
+        for (const b of d.ids) if (a < b && (c[a + '|' + b] || 0) >= 2 && (c[b + '|' + a] || 0) >= 2) return { bind: { p1: a, p2: b } };
+      return null;
+    },
+  },
+  {
+    id: 'habit-chat-silent', cat: 'habit', level: 3, sim: 'habit-chat',
+    text: ["{p1} hasn't sent a single chat message while everyone else talks. What is {p1} thinking that they won't type?"],
+    when(d) {
+      const total = d.ids.reduce((sum, p) => sum + (d.st(p).chats || 0), 0);
+      const silent = d.ids.filter((p) => !d.st(p).chats);
+      return total >= 8 && silent.length === 1 ? { bind: { p1: silent[0] } } : null;
+    },
+  },
+  {
+    id: 'habit-crowd-favorite', cat: 'habit', level: 3, sim: 'habit-score',
+    text: [
+      'Everyone keeps voting for {p1}. What did {p1} promise the group before the game?',
+      "{p1}'s answers collected [n] votes so far — more than anyone. Who is secretly writing {p1}'s answers?",
+    ],
+    when(d) {
+      const t = top(d.ids, (p) => d.H.reduce((sum, h) => sum + h.votes.filter(([, a]) => a === p).length, 0), { min: 4 });
+      return t && t.runnerUp != null && t.value >= t.runnerUp + 2 ? { bind: { p1: t.pid }, vars: { n: t.value } } : null;
+    },
+  },
+  {
+    id: 'habit-crickets', cat: 'habit', level: 2, sim: 'habit-score',
+    text: ["{p1}'s answers got crickets [n] times tonight. Which of them was secretly the best answer of the night?"],
+    when(d) {
+      const t = top(d.ids, (p) => d.H.filter((h) => h.entries.some((e) => e.pid === p && !e.judge && !e.crowd)).length, { min: 3 });
+      return t ? { bind: { p1: t.pid }, vars: { n: t.value } } : null;
+    },
+  },
+
+  // ------------------------------------------------------------------ more about the group
+  {
+    id: 'group-avatar', cat: 'group', level: 2, sim: 'group-avatar',
+    text: [
+      '{p1} chose [face] as their face tonight. What does that say about {p1} that {p1} would rather not admit?',
+      "Of all the faces, {p1} picked [face]. What's the real story behind that choice?",
+    ],
+    when(d) {
+      const pid = d.ids[Math.floor(random() * d.ids.length)];
+      const p = d.room.players.find((x) => x.id === pid);
+      return p && p.avatar ? { bind: { p1: pid }, vars: { face: p.avatar } } : null;
+    },
+  },
+  {
+    id: 'group-trophies', cat: 'group', level: 2, sim: 'group-wins',
+    text: ['{p1} has already won [n] game[s] in this room. Where is {p1} keeping the imaginary trophies — and who has to polish them?'],
+    when(d) {
+      const w = d.room.wins || {};
+      const t = top(d.ids, (p) => w[p] || 0, { min: 1 });
+      return t ? { bind: { p1: t.pid }, vars: { n: t.value, s: t.value > 1 ? 's' : '' } } : null;
+    },
+  },
+  {
+    id: 'group-veteran', cat: 'group', level: 2, sim: 'group-experience',
+    text: ['{p1} has played this game more than anyone here. What is {p1}\'s secret strategy that nobody else has figured out?'],
+    when(d) {
+      const t = top(d.ids, (p) => Object.keys((d.room.seenBy && d.room.seenBy[p]) || {}).length, { min: 30 });
+      return t && t.runnerUp != null && t.value >= t.runnerUp * 2 ? { bind: { p1: t.pid } } : null;
+    },
+  },
+  {
+    id: 'group-first-timer', cat: 'group', level: 2, sim: 'group-experience',
+    text: ["It's {p1}'s first time playing with this app. What did the others warn {p1} about before the game?"],
+    when(d) {
+      const seen = (p) => Object.keys((d.room.seenBy && d.room.seenBy[p]) || {}).length;
+      const fresh = d.ids.filter((p) => seen(p) <= ((d.g && d.g.idx) || 0) + 1);
+      return fresh.length === 1 && d.ids.filter((p) => seen(p) >= 20).length >= 2 ? { bind: { p1: fresh[0] } } : null;
+    },
+  },
+  {
+    id: 'group-last-place', cat: 'group', level: 2, sim: 'group-score',
+    text: ["{p1} is in last place but still smiling. What is {p1}'s comeback plan?"],
+    when(d) {
+      if (!d.g || d.g.idx < 4 || !d.g.scores) return null;
+      const t = top(d.ids, (p) => d.g.scores[p] || 0, { min: Infinity, low: true });
+      return t && t.runnerUp != null && t.runnerUp > t.value ? { bind: { p1: t.pid } } : null;
+    },
+  },
 ];
+
+// More ways to say each one, so the same situation never sounds the same twice.
+const MORE_WORDINGS = {
+  'place-odd-region': ['{p1} is the only one near [place] tonight; everyone else is around [others]. What is {p1} doing there that nobody was told about?'],
+  'place-same-city-pair': ['Only {p1} and {p2} are in [place]. Which one of them suggested meeting up after this game — and where?'],
+  'place-season': ["{p1} is in [s1] while everyone else is in [s2]. What is {p1} wearing right now that would make everyone else jealous?"],
+  'place-city': ["The app found {p1} near [city]. Which spot in [city] does {p1} keep going back to — and why alone?", "{p1} is somewhere around [city]. What does {p1} do there on the days nobody hears from them?"],
+  'dev-tablet': ["{p1} is playing on a tablet. Whose tablet is it really, and what is {p1} not supposed to see on it?"],
+  'dev-charging': ["{p1} is the only one plugged in. How long has {p1} been sitting next to that outlet, and why?"],
+  'dev-dark-mode': ['{p1} keeps their phone in dark mode, unlike everyone else. What is {p1} reading at night that needs the lights off?'],
+  'dev-installed': ['{p1} saved this game to their home screen. What other app sits right next to it that {p1} hopes nobody notices?'],
+  'dev-browser': ['{p1} is the only one on [browser]. What happened that made {p1} stop trusting the normal browsers?'],
+  'dev-same-phone': ['{p1} and {p2} have the exact same [model]. Which of them bought it first — and who still won\'t admit they copied?'],
+  'lang-many': ["{p1}'s phone knows [langs]. Which one does {p1} use to argue with the GPS?"],
+  'lang-abroad': ['{p1} is in [country], but their phone still speaks [lang]. What does {p1} pretend to understand when the locals talk?'],
+  'net-same-wifi-pair': ['{p1} and {p2} are sharing a Wi-Fi network right now. What are they watching together while pretending to play?'],
+  'net-odd-wifi': ["Everyone's connected to the same network — except {p1}. Who changed the Wi-Fi password, and why didn't they tell {p1}?"],
+  'net-mobile-data': ["{p1} is on mobile data instead of Wi-Fi. What is {p1} doing out there instead of being home?"],
+  'net-detour': ["The app noticed {p1}'s signal is taking a long way around. Who is {p1} trying very hard not to be found by?"],
+  'time-early': ["It's [time] for {p1}. What did {p1} skip this morning to be here?"],
+  'time-work': ["It's [day], [time] for {p1}. What is open in the other window that {p1}'s boss thinks they're doing?"],
+  'time-diff': ['[t1] where {p1} is, [t2] where {p2} is. What would {p2} be shocked to learn {p1} usually does at this hour?'],
+  'time-dinner': ["It's dinner time for {p1}. Who is {p1} ignoring at the dinner table to play this?"],
+  'habit-long-away': ['{p1} disappeared for [secs] seconds during the game. Who was {p1} talking to?'],
+  'habit-fast-typer': ['{p1} types [cps] letters per second. How many group chats is {p1} secretly keeping up with right now?'],
+  'habit-slow-writer': ['{p1} takes about [secs] seconds per answer. How many drafts does {p1} delete before submitting?'],
+  'habit-editor': ['{p1} went back and changed their answer [n] times already. What did the first versions say?'],
+  'habit-quick-voter': ['{p1} picks a favorite in about [secs] seconds every time. What other big decisions does {p1} make that fast?'],
+  'habit-slow-voter': ['{p1} always takes the longest to vote. What is {p1} weighing up that the rest of us can\'t see?'],
+  'habit-first': ['{p1} is always the first to answer. What does {p1} do with all the free time while everyone else is writing?'],
+  'habit-last': ['{p1} keeps finishing last. Who is texting {p1} the answers?'],
+  'habit-long-answers': ["{p1}'s answers are always the longest. What is the longest message {p1} ever sent — and to whom?"],
+  'habit-short-answers': ['{p1} never writes more than about [len] letters. What is {p1} saving all those words for?'],
+  'habit-chatty': ["{p1} has sent [n] messages in the waiting room. What would {p1}'s messages say if nobody else could read them?"],
+  'habit-emoji': ['{p1} reacts with [emoji] to everything. Who taught {p1} that one, and what does it mean in private?'],
+  'habit-dropouts': ["{p1} keeps losing the connection ([n] times now). Where does {p1} keep wandering off to?"],
+  'group-late-joiner': ['{p1} joined late. What was {p1} doing that was more important than this game?'],
+  'group-before-joined': ['Before {p1} arrived, the group was quiet for a reason. What were they all saying about {p1}?'],
+  'group-most-asked': ["The app has asked about {p1} [n] times tonight. What does the app suspect about {p1}?"],
+  'group-never-asked': ["Not one question about {p1} so far. What is {p1} hiding so well that even the app can't find it?"],
+  'group-host': ['Our host {p1} controls the game tonight. What rule would {p1} secretly add if nobody could object?'],
+  'group-leader': ['{p1} is in the lead. What will {p1} make everyone do if they win?'],
+  'group-no-votes': ['{p1} is still waiting for their first vote. What would {p1} offer for just one?'],
+  'dev-powerhouse': ["{p1}'s device could run a small country. What is it really doing in the background right now?"],
+  'dev-light-mode': ['{p1} is the only one not using dark mode. What does {p1} know about the dark that the rest of us don\'t?'],
+  'dev-two-phones-alike': ['{p1} and {p2} are the only [os] people here. What secret club meeting are they skipping to play this?'],
+  'lang-pair': ['{p1} and {p2} both have their phones in [lang]. What inside joke do they share that the rest of us would never get?'],
+  'net-mobile-low-battery': ['{p1}: mobile data and [pct]% battery. Where is {p1}, and who is going to have to come pick them up?'],
+  'time-lunch': ["It's lunchtime for {p1}. Who is {p1} eating with that they haven't mentioned?"],
+  'habit-clock-grabbed': ["{p1}'s time ran out [n] times. What was {p1} actually typing to someone else?"],
+  'habit-chat-silent': ['{p1} has stayed quiet in the chat all night. What is {p1} writing in their head about everyone?'],
+  'habit-crickets': ["Nobody voted for {p1}'s answers [n] times. Which answer will {p1} still be defending next week?"],
+  'group-trophies': ['{p1} has won [n] game[s] here already. What is {p1} going to demand as a prize this time?'],
+  'group-veteran': ['{p1} has seen more of these questions than anyone. Which one is {p1} secretly hoping comes up tonight?'],
+  'group-first-timer': ["This is {p1}'s first time playing. What does {p1} think is going on right now?"],
+  'group-last-place': ['{p1} is in last place. Who is {p1} going to blame for it?'],
+};
+for (const t of T) if (MORE_WORDINGS[t.id]) t.text = [...t.text, ...MORE_WORDINGS[t.id]];
+
+// Templates without an explicit similarity group: these share one.
+const SIM = {
+  'place-odd-country': 'place-odd', 'place-odd-region': 'place-odd', 'place-city': 'place-odd',
+  'place-far-pair': 'place-pair', 'place-same-city-pair': 'place-pair',
+  'dev-only-iphone': 'dev-os', 'dev-only-android': 'dev-os', 'dev-same-phone': 'dev-pair',
+  'dev-only-computer': 'dev-computer', 'dev-tablet': 'dev-computer',
+  'dev-low-battery': 'battery', 'dev-charging': 'battery', 'dev-dark-mode': 'dark',
+  'lang-odd': 'lang-odd', 'lang-abroad': 'lang-odd',
+  'net-same-wifi-pair': 'net-same', 'net-odd-wifi': 'net-same', 'net-mobile-data': 'net-mobile',
+  'time-late': 'time-night', 'time-early': 'time-day', 'time-work': 'time-day', 'time-dinner': 'time-meal', 'time-diff': 'time-diff',
+  'habit-leaves-app': 'habit-away', 'habit-long-away': 'habit-away', 'habit-dropouts': 'habit-away',
+  'habit-fast-typer': 'habit-typing', 'habit-slow-writer': 'habit-slow', 'habit-deleter': 'habit-typing', 'habit-editor': 'habit-typing',
+  'habit-quick-voter': 'habit-voting-speed', 'habit-slow-voter': 'habit-voting-speed', 'habit-first': 'habit-order', 'habit-last': 'habit-order',
+  'habit-loyal-vote': 'habit-votes', 'habit-long-answers': 'habit-length', 'habit-short-answers': 'habit-length',
+  'habit-chatty': 'habit-chat', 'habit-emoji': 'habit-chat',
+  'group-late-joiner': 'group-late', 'group-before-joined': 'group-late', 'group-most-asked': 'group-featured', 'group-never-asked': 'group-featured',
+  'group-leader': 'group-score', 'group-no-votes': 'habit-score',
+};
+const simOf = (t) => t.sim || SIM[t.id] || t.id;
 
 function fill(text, bind, vars = {}) {
   return text.replace(/\[(\w+)\]/g, (m, k) => (vars[k] != null ? String(vars[k]).replace(/[{}[\]]/g, '') : m));
@@ -641,10 +1037,11 @@ export function dynamicCandidates(room, g, activeIds, ctx) {
   const d = makeData(room, g, activeIds, ctx || { now: Date.now() });
   const used = new Set(room.used || []);
   const cats = (g && g.dynCats) || {};
+  const sims = new Set((g && g.dynSims) || []); // never two similar ones in the same game
   const out = [];
   for (const t of T) {
     const id = 'x' + t.id;
-    if (used.has(id) || (cats[t.cat] || 0) >= (CATEGORY_MAX[t.cat] || 1)) continue;
+    if (used.has(id) || sims.has(simOf(t)) || (cats[t.cat] || 0) >= (CATEGORY_MAX[t.cat] || 1)) continue;
     let b;
     try {
       b = t.when(d);
@@ -654,7 +1051,9 @@ export function dynamicCandidates(room, g, activeIds, ctx) {
     if (!b || Object.values(b.bind).some((pid) => !activeIds.includes(pid))) continue;
     if (new Set(Object.values(b.bind)).size !== Object.keys(b.bind).length) continue;
     const phrase = t.text[Math.floor(random() * t.text.length)];
-    out.push({ id, cat: t.cat, level: t.level, text: fill(phrase, b.bind, b.vars), bind: b.bind, weightPenalty: (cats[t.cat] || 0) * 0.5 });
+    // spread these questions over different people too
+    const featured = Object.values(b.bind).reduce((sum, pid) => sum + ((g.featured && g.featured[pid]) || 0), 0);
+    out.push({ id, cat: t.cat, sim: simOf(t), level: t.level, text: fill(phrase, b.bind, b.vars), bind: b.bind, weightPenalty: (cats[t.cat] || 0) * 0.5 + featured * 0.3 });
   }
   return out;
 }

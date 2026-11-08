@@ -1,5 +1,7 @@
 import { html, useState, useEffect, useMemo, useRef } from '../vendor/preact-htm.js';
-import { Btn, Avatar, Toggle, Seg, Confirm, Doodle, cx, playerMap } from './common.js';
+import { Btn, Avatar, Toggle, Seg, Confirm, Modal, Doodle, cx, playerMap } from './common.js';
+import { AvatarPicker } from './home.js';
+import { local, KEYS } from '../storage.js';
 import { MAX_PLAYERS, MIN_PLAYERS, ROUND_CHOICES, TIME_LIMITS } from '../game/engine.js';
 import { parseDeck, TEMPLATE_DECK, LEVELS } from '../game/deck.js';
 import { brush } from './art.js';
@@ -26,9 +28,13 @@ function useJoinSounds(view) {
   }, [count]);
 }
 
-export function PlayerTiles({ view, onKick, showEmpty }) {
+export function PlayerTiles({ view, onKick, showEmpty, onEditMe }) {
   const tiles = view.players.map((p, i) => html`<div class="player-tile" key=${p.id} style=${`animation-delay:${i * 0.05}s`}>
-    <${Avatar} p=${p} size="lg" bob off=${!p.online} delay=${i * 0.3} badge=${!p.online ? '📡' : null} />
+    ${p.id === view.me && onEditMe
+      ? html`<button class="avatar-edit" title="Change your face" aria-label="Change your face" onClick=${onEditMe} data-testid="edit-avatar">
+          <${Avatar} p=${p} size="lg" bob delay=${i * 0.3} /><span class="edit-pencil">✏️</span>
+        </button>`
+      : html`<${Avatar} p=${p} size="lg" bob off=${!p.online} delay=${i * 0.3} badge=${!p.online ? '📡' : null} />`}
     <div class="name">${p.name}</div>
     <div class="tag">${p.isHost ? 'host' : p.id === view.me ? 'you!' : !p.online ? 'reconnecting…' : ''}</div>
     ${onKick && p.online && p.net === 'relay' && html`<span class="net-tag" title="Connected through the backup relay (direct connection blocked on this network)">relay</span>`}
@@ -45,14 +51,27 @@ export function PlayerTiles({ view, onKick, showEmpty }) {
 const LOBBY_TIPS = [
   'Tip: the person a question is about gets a double vote ⚖️',
   'Tip: funny beats true. Usually.',
-  "Tip: the AI is learning about you as we speak. Probably.",
+  "Tip: the app is learning about you as we speak. Probably.",
   'Tip: you can mute sounds with the speaker button up top 🔈',
   'Tip: refreshing is safe — you will pop right back in.',
   "Tip: if you don't vote, your own answer gets no points!",
 ];
 
-export function PlayerLobby({ view }) {
+/** Tap your own face in the lobby to pick another one. */
+function FacePicker({ ctrl, view, onClose }) {
+  const me = view.players.find((p) => p.id === view.me);
+  return html`<${Modal} onClose=${onClose} title="Pick a new face">
+    <${AvatarPicker} value=${me && me.avatar} onChange=${(a) => {
+      ctrl.dispatch({ type: 'avatar', avatar: a });
+      local.set(KEYS.profile, { ...local.get(KEYS.profile, {}), avatar: a });
+    }} />
+    <div class="row" style="justify-content:flex-end;margin-top:10px"><${Btn} small color="mint" onClick=${onClose} testid="avatar-done">Done<//></div>
+  <//>`;
+}
+
+export function PlayerLobby({ ctrl, view }) {
   useJoinSounds(view);
+  const [faces, setFaces] = useState(false);
   const host = view.players.find((p) => p.isHost);
   const [tip, setTip] = useState(0);
   useEffect(() => {
@@ -63,8 +82,10 @@ export function PlayerLobby({ view }) {
     <div class="center"><h1 style="font-size:38px">You're in! 🎉</h1>
       <p class="script" style="margin:6px 0 0">Waiting for ${host ? host.name : 'the host'} to start<span class="dots"></span></p></div>
     <div class="card"><div class="card-title">${Doodle.star({ size: 24 })} Players (${view.players.length}/${MAX_PLAYERS})</div>
-      <${PlayerTiles} view=${view} />
+      <${PlayerTiles} view=${view} onEditMe=${() => setFaces(true)} />
+      <p class="muted small center" style="margin:6px 0 0">Tap your face to change it ✏️</p>
     </div>
+    ${faces && html`<${FacePicker} ctrl=${ctrl} view=${view} onClose=${() => setFaces(false)} />`}
     <${DeviceToggles} />
     <p class="quip" key=${tip}>${LOBBY_TIPS[tip]}</p>
     ${view.gamesPlayed > 0 && html`<p class="center muted">Games played in this room: ${view.gamesPlayed}</p>`}
@@ -131,7 +152,10 @@ export function Settings({ ctrl, info, title = 'Game settings' }) {
       })()}</span>
     </div>
     <${Toggle} checked=${s.subjectAnswers} onChange=${(v) => set({ subjectAnswers: v })} label="The person asked about writes an answer too" />
-    <${Toggle} checked=${s.clues !== false} onChange=${(v) => set({ clues: v })} label="Let the AI use what it notices (time zones, phones, how people play…) 👀" />
+    <${Toggle} checked=${s.clues !== false} onChange=${(v) => set({ clues: v })} label="Let the app use what it notices (time zones, phones, how people play…) 👀" />
+    ${s.clues !== false &&
+    html`<${Toggle} checked=${!!s.moreClues} onChange=${(v) => set({ moreClues: v })} testid="more-clues"
+      label="More questions from what it notices (kicks in once it has collected enough)" />`}
     ${info.deck && html`<${Toggle} checked=${s.fillStarter} onChange=${(v) => set({ fillStarter: v })} label="Top up with built-in questions if the deck runs out" />`}
   </div>`;
 }
@@ -146,11 +170,9 @@ function downloadTemplate() {
 }
 
 function DeckPanel({ ctrl, view, info }) {
-  const [open, setOpen] = useState(true);
   const [warnings, setWarnings] = useState([]);
   const [over, setOver] = useState(false);
   const fileRef = useRef();
-  const canUpload = true;
   const [ai, setAi] = useState(false);
   const deck = info.deck;
 
@@ -172,33 +194,34 @@ function DeckPanel({ ctrl, view, info }) {
     if (file) loadText(await file.text(), file.name);
   };
 
-  const assigned = deck ? deck.predicted.filter((x) => x.pid).length : 0;
+  const builtinFresh = info.pool ? info.pool.starter : 0;
   return html`<div class="card stack" style="gap:10px" data-testid="deck-panel">
-    <div class="collapsed-bar">
-      <div class="card-title" style="margin:0">🤫 Secret question deck</div>
-      <button class="link-btn" onClick=${() => { sfx('tap'); setOpen(!open); }}>${open ? 'hide' : 'show'}</button>
-    </div>
-    ${!open
-      ? html`<div class="muted small">${deck ? `“${deck.title}” loaded · ${assigned}/${deck.predicted.length} matched` : 'No deck loaded — using built-in questions.'}</div>`
-      : html`
-        ${!deck &&
-        html`<label class=${cx('deck-drop', !canUpload && 'disabled', over && 'over')}
-            onDragOver=${(e) => { e.preventDefault(); canUpload && setOver(true); }}
-            onDragLeave=${() => setOver(false)}
-            onDrop=${(e) => { e.preventDefault(); setOver(false); canUpload && load(e.dataTransfer.files[0]); }}>
-            ${Doodle.upload({ size: 36 })}
-            <b style="font-family:var(--display)">${canUpload ? 'Upload a question deck' : 'Waiting for at least one player to join…'}</b>
-            <span class="muted small">.json, .txt or .csv — questions, creepiness levels & predicted players</span>
-            <input ref=${fileRef} type="file" accept=".json,.txt,.csv,.tsv,application/json,text/plain,text/csv" disabled=${!canUpload}
-              style="display:none" data-testid="deck-input" onChange=${(e) => { load(e.currentTarget.files[0]); e.currentTarget.value = ''; }} />
-          </label>
-          <div class="stack" style="gap:6px">
-            <span class="muted small">No deck? The AI uses its ${info.builtin ? info.builtin.total : ''} built-in questions — plus whatever it notices about you.</span>
-            <div class="deck-make">
-              <${Btn} color="grape" onClick=${() => setAi(true)} testid="ai-deck">✨ Make one with AI<//>
-              <${Btn} color="sky" sound="tap" onClick=${downloadTemplate} testid="template-btn">📄 Download the template<//>
-            </div>
-          </div>`}
+    <div class="card-title" style="margin:0">🤫 Secret question deck <span class="muted small">(optional)</span></div>
+    ${!deck &&
+    html`<p style="margin:0">The secret ingredient: questions written about <b>the people who are coming</b> — their names, habits and inside jokes. The app asks them as if it simply knew. Nobody else has to find out you prepared them. 😉</p>
+      <div class="deck-options">
+        <div class="deck-option">
+          <b>✨ Make one with AI</b>
+          <span class="muted small">Describe the group in a few words, copy the ready-made prompt into ChatGPT, Gemini or Claude, paste the answer back.</span>
+          <${Btn} small color="grape" onClick=${() => setAi(true)} testid="ai-deck">Make one with AI<//>
+        </div>
+        <div class="deck-option">
+          <b>✍️ Write your own</b>
+          <span class="muted small">Download the template, fill in your questions and creepiness levels, then upload it below.</span>
+          <${Btn} small color="sky" sound="tap" onClick=${downloadTemplate} testid="template-btn">Download the template<//>
+        </div>
+      </div>
+      <label class=${cx('deck-drop', over && 'over')}
+        onDragOver=${(e) => { e.preventDefault(); setOver(true); }}
+        onDragLeave=${() => setOver(false)}
+        onDrop=${(e) => { e.preventDefault(); setOver(false); load(e.dataTransfer.files[0]); }}>
+        ${Doodle.upload({ size: 32 })}
+        <b style="font-family:var(--display)">Upload a deck</b>
+        <span class="muted small">.json, .txt or .csv — from the AI, the template, or one you already have</span>
+        <input ref=${fileRef} type="file" accept=".json,.txt,.csv,.tsv,application/json,text/plain,text/csv"
+          style="display:none" data-testid="deck-input" onChange=${(e) => { load(e.currentTarget.files[0]); e.currentTarget.value = ''; }} />
+      </label>
+      <p class="muted small" style="margin:0">No deck? No problem: the app uses its ${builtinFresh} built-in questions — plus whatever it notices about you.</p>`}
         ${deck &&
         html`<div class="stack" style="gap:8px">
             <div class="row" style="justify-content:space-between">
@@ -224,7 +247,6 @@ function DeckPanel({ ctrl, view, info }) {
             </div>`)}
             <div class="muted small">Questions about people who aren't matched are skipped. Names in questions use what players typed when joining.</div>
           </div>`}
-      `}
     ${ai && html`<${AiDeckHelper} view=${view} onClose=${() => setAi(false)} onPaste=${(text) => loadText(text, 'ai-deck.json')} onTemplate=${downloadTemplate} />`}
     ${info.builtin && info.builtin.seen > 0 && html`<div class="muted small" data-testid="seen-info">Built-in questions: ${info.builtin.fresh} nobody here has played yet · ${info.builtin.seen} played before by someone here (those come last)</div>`}
     ${info.usedCount > 0 && html`<div class="row" style="justify-content:space-between">
@@ -238,13 +260,14 @@ export function HostLobby({ ctrl, view }) {
   useJoinSounds(view);
   const info = view.host;
   const [kick, setKick] = useState(null);
+  const [faces, setFaces] = useState(false);
   const n = view.players.length;
   const pool = info.pool;
   const rounds = Math.min(info.settings.rounds, pool.total);
   let poolNote;
   if (!pool.total) poolNote = html`<span style="color:#b3261e">No fresh questions left for this group — load a deck or reset used questions.</span>`;
   else if (pool.total < info.settings.rounds) poolNote = html`Only ${pool.total} fresh question${pool.total === 1 ? '' : 's'} left — this game will be ${pool.total} long.`;
-  else poolNote = html`${info.deck ? `${pool.deck} deck question${pool.deck === 1 ? '' : 's'} ready` : `${pool.starter} built-in questions ready`}${info.deck && pool.starter ? ` (+${pool.starter} backup)` : ''}.`;
+  else poolNote = html`${info.deck ? `${pool.deck} deck question${pool.deck === 1 ? '' : 's'} ready` : `${pool.starter} built-in questions ready`}${info.deck && pool.starter ? ` (+${pool.starter} built-in as backup)` : ''}.`;
 
   return html`<div class="screen wide enter">
     <div class="host-grid">
@@ -252,8 +275,8 @@ export function HostLobby({ ctrl, view }) {
         <${CodeCard} code=${view.code} />
         <div class="card">
           <div class="card-title">${Doodle.star({ size: 24 })} Players (${n}/${MAX_PLAYERS})</div>
-          <${PlayerTiles} view=${view} showEmpty onKick=${(p) => setKick(p)} />
-          ${n < 2 && html`<p class="script center" style="margin:8px 0 0">Tell your friends to open this page & type the code!</p>`}
+          <${PlayerTiles} view=${view} showEmpty onKick=${(p) => setKick(p)} onEditMe=${() => setFaces(true)} />
+          ${n < MIN_PLAYERS && html`<p class="script center" style="margin:8px 0 0">${n < 2 ? 'Tell your friends to open this page & type the code!' : `You need at least ${MIN_PLAYERS} players — ${MIN_PLAYERS - n} more to go!`}</p>`}
         </div>
       </div>
       <div class="stack">
@@ -269,6 +292,7 @@ export function HostLobby({ ctrl, view }) {
         </div>
       </div>
     </div>
+    ${faces && html`<${FacePicker} ctrl=${ctrl} view=${view} onClose=${() => setFaces(false)} />`}
     ${kick && html`<${Confirm} title=${`Remove ${kick.name}?`} text="They'll be kicked out of the room. (They can rejoin with a new name.)" yes="Remove"
       onNo=${() => setKick(null)} onYes=${() => { ctrl.dispatch({ type: 'kick', pid: kick.id }); setKick(null); }} />`}
   </div>`;

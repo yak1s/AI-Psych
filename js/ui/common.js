@@ -88,8 +88,8 @@ export function Btn({ color = 'sun', big, block, small, ghost, pulse, sound = 'p
     }}>${children}</button>`;
 }
 
-export function Toggle({ checked, onChange, label, hint }) {
-  return html`<label class="toggle">
+export function Toggle({ checked, onChange, label, hint, testid }) {
+  return html`<label class="toggle" data-testid=${testid}>
     <input type="checkbox" checked=${checked} onChange=${(e) => { sfx('tap'); onChange(e.currentTarget.checked); }} />
     <span class="box">${Doodle.check({ size: 22, sw: 5 })}</span>
     <span>${label}${hint && html`<br /><span class="muted small">${hint}</span>`}</span>
@@ -153,7 +153,7 @@ const ERRORS = {
   'name-braces': "Names can't contain { or }",
   'room-full': 'That room is full (30 players max).',
   denied: "The host didn't let you in this time.",
-  'need-players': 'Need at least one more player!',
+  'need-players': 'You need at least 3 players to start!',
   'no-questions': 'No fresh questions left for this group! Reset used questions or load another deck.',
   'in-game': 'Finish the current game first.',
   'bad-deck': 'That deck looks empty.',

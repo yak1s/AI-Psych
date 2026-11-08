@@ -126,7 +126,11 @@ export class PlayerController {
   }
 
   get view() {
-    return this._view ? this._optimistic(this._view) : null;
+    if (!this._view) return null;
+    let v = this._optimistic(this._view);
+    // While we can't reach the host, its clock is paused (or a new host is taking over): don't count down.
+    if (!this.welcomed && v.game && v.game.timer) v = { ...v, game: { ...v.game, timer: { ...v.game.timer, paused: true } } };
+    return v;
   }
 
   emit() {

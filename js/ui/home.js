@@ -20,7 +20,7 @@ export function HowToPlay({ onClose }) {
   return html`<${Modal} onClose=${onClose} title="How to play">
     <ol class="rules">
       <li>One person <b>hosts</b> on their phone or laptop. Everyone else <b>joins</b> with the 4-digit code (${MAX_PLAYERS} players max).</li>
-      <li>Our AI asks a question <b>about one of you</b>. Everybody writes a funny (or honest…) answer.</li>
+      <li>The app asks a question <b>about one of you</b>. Everybody writes a funny (or honest…) answer.</li>
       <li>Everyone votes for their favorite answer — but not their own! <b>No vote, no points:</b> if you don't vote, your own answer's points don't count.</li>
       <li>The person the question is about is the <b>judge</b>: their vote is worth <b>2 points</b>. Everyone else's vote is worth 1.</li>
     </ol>
@@ -56,25 +56,15 @@ export function Home({ onHost, onJoin, resumeHost, resumePlayer, onResumeHost, o
       <div class="row center" style="gap:22px">
         <button class="link-btn" onClick=${() => { sfx('tap'); setRules(true); }}>How do I play?</button>
       </div>
-      <p class="footer-note">No accounts · no app · 2–${MAX_PLAYERS} players</p>
+      <p class="footer-note">No accounts · no downloads · 3–${MAX_PLAYERS} players</p>
     </div>
     ${rules && html`<${HowToPlay} onClose=${() => setRules(false)} />`}
   </div>`;
 }
 
 export function AvatarPicker({ value, onChange }) {
-  const ref = useRef();
-  const surprise = () => {
-    const a = AVATARS[Math.floor(Math.random() * AVATARS.length)];
-    sfx('boing');
-    onChange(a);
-    setTimeout(() => {
-      const el = ref.current && ref.current.querySelector('button.on');
-      if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }, 30);
-  };
   return html`<div class="stack" style="gap:8px">
-    <div class="avatar-pick" role="radiogroup" aria-label="Pick your avatar" ref=${ref}>
+    <div class="avatar-pick" role="radiogroup" aria-label="Pick your avatar">
       ${AVATARS.map(
         (a, i) => html`<button key=${a} role="radio" aria-checked=${value === a} class=${value === a ? 'on' : ''}
           onClick=${() => { sfx('pop'); onChange(a); }}>
@@ -82,7 +72,6 @@ export function AvatarPicker({ value, onChange }) {
         </button>`,
       )}
     </div>
-    <button class="link-btn" style="align-self:center" onClick=${surprise}>🎲 surprise me</button>
   </div>`;
 }
 

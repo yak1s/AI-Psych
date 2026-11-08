@@ -99,7 +99,7 @@ export function questionCode(id) {
 
 function timerEnd(view) {
   const t = view.game.timer;
-  if (!t) return null;
+  if (!t || t.paused) return null; // can't reach the host: its clock is stopped too
   return (view.receivedAt || Date.now()) + t.remaining;
 }
 
@@ -234,7 +234,7 @@ export function AnswerPhase({ ctrl, view }) {
       <${Progress} n=${doneCount} total=${total} label="answered" />
       <${StatusList} view=${view} ids=${g.q.answerers} done=${g.answered} doneText="answered!" waitText="writing…" />
       ${g.timer && g.timer.waiting && g.timer.waiting.length
-        ? html`<p class="quip" data-testid="waiting-reconnect">📡 Giving ${g.timer.waiting.map((p) => who(p).name).join(' & ')} a few extra seconds to reconnect…</p>`
+        ? html`<p class="quip" data-testid="waiting-reconnect">📡 Giving ${g.timer.waiting.map((p) => who(p).name).join(' & ')} 10 extra seconds to reconnect…</p>`
         : g.stalled
         ? html`<p class="quip">⏰ Nobody wrote anything! The host is deciding what's next…</p>`
         : expired
@@ -249,6 +249,7 @@ export function AnswerPhase({ ctrl, view }) {
     <${QuestionCard} view=${view} />
     ${timer}
     ${expired && html`<p class="quip" style="color:#b3261e">${hard ? "⏰ Time's up! Sending what you wrote…" : '⏰ Hurry! The host can move on without you now…'}</p>`}
+    ${g.timer && g.timer.paused && html`<p class="quip" data-testid="clock-paused">⏸ Clock paused while we reconnect to the host — keep writing!</p>`}
     ${hard && !expired && html`<p class="muted small center" style="margin:0">When time runs out, whatever you've typed is sent automatically.</p>`}
     <div class="card stack" style="gap:8px">
       <label class="script" for="answer" style="font-size:24px;font-weight:700">Your answer</label>
@@ -343,6 +344,7 @@ export function VotePhase({ ctrl, view }) {
   return html`<div class="stack enter" data-testid="vote-phase">
     <${QuestionCard} view=${view} animate=${false} compact />
     ${endsAt && html`<${TimerRing} endsAt=${endsAt} total=${g.timer.total} />`}
+    ${g.timer && g.timer.paused && html`<p class="quip" data-testid="clock-paused">⏸ Clock paused while we reconnect to the host…</p>`}
     ${lastChance && html`<div class="last-chance" role="alert" data-testid="last-chance">
       ⏰ <b>Time's up — last chance!</b> Vote in the next 10 seconds, or your own answer won't get any points this round.
       <div class="small">(You only get this extra time once per game.)</div>

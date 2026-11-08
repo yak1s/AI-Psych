@@ -7,7 +7,7 @@ import { sfx } from './audio.js';
 import { local } from '../storage.js';
 
 const SAVE_KEY = 'aipsych.aiPromptForm';
-const COUNTS = [60, 100, 150];
+const COUNTS = [30, 60, 100];
 
 export function buildPrompt(f) {
   const people = f.people.filter((p) => p.name.trim());
@@ -110,12 +110,14 @@ export function AiDeckHelper({ view, deckNames = [], onClose, onPaste, onTemplat
   };
   const [f, setF] = useState(() => {
     const saved = local.get(SAVE_KEY);
-    const base = { title: '', occasion: '', group: '', avoid: '', language: 'English', count: 100, people: initialPeople() };
+    const base = { title: '', occasion: '', group: '', avoid: '', language: 'English', count: 60, people: initialPeople() };
     if (!saved) return base;
     // keep what was typed last time, add anyone new
     const people = [...saved.people];
     for (const p of base.people) if (p.name && !people.some((x) => x.name.trim().toLowerCase() === p.name.toLowerCase())) people.push(p);
-    return { ...base, ...saved, people };
+    const merged = { ...base, ...saved, people };
+    if (!COUNTS.includes(merged.count)) merged.count = 60;
+    return merged;
   });
   const [copied, setCopied] = useState(false);
   const [pasted, setPasted] = useState('');

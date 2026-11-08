@@ -413,11 +413,10 @@ test('a time limit waits (a little) for players whose connection just dropped', 
   assert.ok(E.tick(t.room, t.ctx));
   assert.equal(g.phase, 'answer', 'still answering');
   assert.deepEqual(g.timer.waiting, [t.ids.Bob]);
-  for (let i = 0; i < 10 && g.phase === 'answer'; i++) {
-    t.ctx.now = g.timer.endsAt + 2000;
-    E.tick(t.room, t.ctx);
-  }
-  assert.equal(g.phase, 'vote', 'but never forever');
+  assert.ok(g.timer.endsAt - t.ctx.now >= E.RECONNECT_GRACE_MS - 2000, '10 more seconds');
+  t.ctx.now = g.timer.endsAt + 2000;
+  E.tick(t.room, t.ctx);
+  assert.equal(g.phase, 'vote', 'only once');
   const before = g.timer.endsAt;
   E.pauseTimer(t.room, 7000);
   assert.equal(g.timer.endsAt, before + 7000);
@@ -531,4 +530,42 @@ test('first time a player runs out of time to vote in a game: a warning and 10 m
   t.ctx.now = g.timer.endsAt + 2000;
   E.tick(t.room, t.ctx);
   assert.equal(g.phase, 'results', 'the warning is once per game');
+});
+
+test('more clue questions: off by default; when on, a much bigger share once enough clues exist', () => {
+  const countClues = (moreClues, rich) => {
+    const t = setup(['Host', 'Ann', 'Bob', 'Cid', 'Dee']);
+    t.room.settings.clues = true;
+    t.room.settings.moreClues = moreClues;
+    t.room.settings.rounds = 15;
+    assert.equal(E.createRoom({ code: '1', host: { name: 'X' } }).settings.moreClues, false, 'default off');
+    const base = { country: 'US', countryName: 'the US', os: 'Android', device: 'phone', brand: 'Samsung', lang: 'en-US', langs: ['en-US'], dark: false };
+    for (const n of t.names) t.room.signals[t.ids[n]] = { ...base };
+    if (rich) {
+      t.room.signals[t.ids.Cid] = { ...base, country: 'AR', countryName: 'Argentina', os: 'iOS', brand: 'Apple', lang: 'es-AR', langs: ['es-AR', 'en-US'] };
+      t.room.signals[t.ids.Dee] = { ...base, device: 'computer', os: 'macOS', dark: true };
+      t.room.signals[t.ids.Ann] = { ...base, battery: { level: 9, charging: false, at: Date.now() } };
+    }
+    t.act('Host', { type: 'start' });
+    const g = t.room.game;
+    let clues = 0;
+    const sims = [];
+    for (let r = 0; r < g.n; r++) {
+      if (g.q.kind === 'clue') clues++;
+      playRound(t);
+      t.act('Host', { type: 'next' });
+      if (g.phase === 'final') break;
+    }
+    return { clues, sims: g.dynSims || [] };
+  };
+  let off = 0;
+  let on = 0;
+  for (let i = 0; i < 6; i++) {
+    off += countClues(false, true).clues;
+    const r = countClues(true, true);
+    on += r.clues;
+    assert.equal(new Set(r.sims).size, r.sims.length, 'never two similar clue questions in one game');
+  }
+  assert.ok(on > off, `more with the toggle on (${on} vs ${off})`);
+  assert.ok(countClues(true, false).clues <= Math.round(15 * 0.4), 'not enough clues collected: normal share');
 });
