@@ -194,7 +194,7 @@ function DeckPanel({ ctrl, view, info }) {
     if (file) loadText(await file.text(), file.name);
   };
 
-  const builtinFresh = info.pool ? info.pool.starter : 0;
+  const builtinTotal = info.builtin ? info.builtin.total : 0; // always the full collection, not what this device already played
   return html`<div class="card stack" style="gap:10px" data-testid="deck-panel">
     <div class="card-title" style="margin:0">🤫 Secret question deck <span class="muted small">(optional)</span></div>
     ${!deck &&
@@ -221,7 +221,7 @@ function DeckPanel({ ctrl, view, info }) {
         <input ref=${fileRef} type="file" accept=".json,.txt,.csv,.tsv,application/json,text/plain,text/csv"
           style="display:none" data-testid="deck-input" onChange=${(e) => { load(e.currentTarget.files[0]); e.currentTarget.value = ''; }} />
       </label>
-      <p class="muted small" style="margin:0">No deck? No problem: the app uses its ${builtinFresh} built-in questions — plus whatever it notices about you.</p>`}
+      <p class="muted small" style="margin:0">No deck? No problem: the app uses its ${builtinTotal} built-in questions — plus whatever it notices about you.</p>`}
         ${deck &&
         html`<div class="stack" style="gap:8px">
             <div class="row" style="justify-content:space-between">
@@ -267,7 +267,7 @@ export function HostLobby({ ctrl, view }) {
   let poolNote;
   if (!pool.total) poolNote = html`<span style="color:#b3261e">No fresh questions left for this group — load a deck or reset used questions.</span>`;
   else if (pool.total < info.settings.rounds) poolNote = html`Only ${pool.total} fresh question${pool.total === 1 ? '' : 's'} left — this game will be ${pool.total} long.`;
-  else poolNote = html`${info.deck ? `${pool.deck} deck question${pool.deck === 1 ? '' : 's'} ready` : `${pool.starter} built-in questions ready`}${info.deck && pool.starter ? ` (+${pool.starter} built-in as backup)` : ''}.`;
+  else poolNote = html`${info.deck ? `${pool.deck} deck question${pool.deck === 1 ? '' : 's'} ready` : `${info.builtin.total} built-in questions ready`}${info.deck && info.settings.fillStarter ? ` (+ ${info.builtin.total} built-in as backup)` : ''}.`;
 
   return html`<div class="screen wide enter">
     <div class="host-grid">
