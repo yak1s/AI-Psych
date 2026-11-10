@@ -545,7 +545,9 @@ export class HostController {
     res.player.joinId = msg.joinId || null;
     E.autoAssign(room);
     if (E.inGame(room)) {
-      addStat(room, res.player.id, { lateJoin: 1 });
+      const st = addStat(room, res.player.id, { lateJoin: 1 });
+      st.lateGame = room.game.id; // for "joined late" questions (a couple of questions later, not on arrival)
+      st.joinedQ = room.game.idx;
       E.greet(room, res.player.id, 'new', ctx);
     }
     this._welcome(link, res.player);

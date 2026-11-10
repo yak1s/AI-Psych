@@ -541,6 +541,39 @@ test('clue questions never state shaky facts (mobile data, IP-based towns)', () 
   assert.ok(!cands().includes('xplace-odd-region'));
 });
 
+test('late joiners get asked about a couple of questions later; performance questions; seen clues skipped', () => {
+  const t = setup();
+  t.room.settings.clues = true;
+  t.act('Host', { type: 'start' });
+  const g = t.room.game;
+  const ids = t.room.players.map((p) => p.id);
+  t.room.stats[t.ids.Cid] = { lateJoin: 1, lateGame: g.id, joinedQ: 1 };
+  g.idx = 2;
+  let c = dynamicCandidates(t.room, g, ids, t.ctx).map((x) => x.id);
+  assert.ok(!c.includes('xgroup-late-joiner'), 'not right after joining');
+  g.idx = 3;
+  c = dynamicCandidates(t.room, g, ids, t.ctx).map((x) => x.id);
+  assert.ok(c.includes('xgroup-late-joiner'), c.join(','));
+  t.room.stats[t.ids.Cid].lateGame = 'an-earlier-game';
+  assert.ok(!dynamicCandidates(t.room, g, ids, t.ctx).some((x) => x.id === 'xgroup-late-joiner'), 'only in the game they joined late');
+
+  // Ann fooled the person asked about twice: a performance question about her.
+  const entry = (pid, judge) => ({ pid, points: judge ? 2 : 0, len: 10, auto: false, judge: judge ? 1 : 0, crowd: 0 });
+  g.history = [0, 1, 2, 3].map((i) => ({ idx: i, about: [t.ids.Bob], answerers: ids, votes: [], rank: {}, entries: [entry(t.ids.Ann, i < 2), entry(t.ids.Host, false)] }));
+  g.scores = { [t.ids.Host]: 0, [t.ids.Ann]: 4, [t.ids.Bob]: 3, [t.ids.Cid]: 1 };
+  const q = dynamicCandidates(t.room, g, ids, t.ctx).find((x) => x.id === 'xperf-judge-fooler');
+  assert.ok(q && q.bind.p1 === t.ids.Ann);
+  assert.ok(dynamicCandidates(t.room, g, ids, t.ctx).some((x) => x.id === 'xperf-close-race'), 'Ann 4 vs Bob 3');
+
+  // A clue question everybody already got in another game is not asked again.
+  for (const pid of ids) t.room.seenBy[pid] = { 'xperf-judge-fooler': 1 };
+  t.room.settings.moreClues = true;
+  for (let i = 0; i < 6; i++) {
+    t.act('Host', { type: 'skipQuestion' });
+    assert.notEqual(t.room.game.q.id, 'xperf-judge-fooler');
+  }
+});
+
 test('questions other players already played elsewhere are avoided', () => {
   const t = setup();
   const pool = E.questionPool(t.room);

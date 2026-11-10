@@ -262,7 +262,8 @@ function chooseQuestion(room, g, activeIds, ctx) {
   const rank = (l) => (l === target ? 0 : l >= last && l < target ? target - l : l > target ? 10 + l - target : 20 + last - l);
 
   // Sometimes the AI uses what it has noticed about the players instead (see dynamic.js).
-  const dyn = room.settings.clues !== false ? dynamicCandidates(room, g, activeIds, ctx) : [];
+  // Clue questions these players already got in other games (on any device) are skipped.
+  const dyn = room.settings.clues !== false ? dynamicCandidates(room, g, activeIds, ctx).filter((d) => seenScore(room, d.id, activeIds) === 0 || !list.length) : [];
   if (dyn.length && wantDynamic(room, g, list.length, dyn, pool.primary.length > 0)) {
     const usable = dyn.filter((d) => d.level === target); // keeps the slow climb in creepiness
     if (usable.length) {
@@ -364,6 +365,9 @@ function beginQuestion(room, ctx) {
     g.dynCats = g.dynCats || {};
     g.dynCats[d.cat] = (g.dynCats[d.cat] || 0) + 1;
     g.dynSims = [...(g.dynSims || []), d.sim];
+    room.simsUsed = { ...(room.simsUsed || {}), [d.sim]: ((room.simsUsed || {})[d.sim] || 0) + 1 };
+    room.simsUsedOn = room.simsUsedOn || {};
+    for (const pid of Object.values(d.bind)) room.simsUsedOn[pid] = [...new Set([...(room.simsUsedOn[pid] || []), d.sim])].slice(-30);
     g.dynStreak = g.lastDynamic === g.idx - 1 ? (g.dynStreak || 1) + 1 : 1;
     g.lastDynamic = g.idx;
   } else {

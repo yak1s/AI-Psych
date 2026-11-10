@@ -14,7 +14,7 @@
 import { random } from './util.js';
 
 /** At most this many questions per category in one game. */
-export const CATEGORY_MAX = { place: 2, device: 2, lang: 1, net: 1, time: 1, habit: 3, group: 2 };
+export const CATEGORY_MAX = { place: 2, device: 2, lang: 1, net: 1, time: 1, habit: 3, group: 2, perf: 2 };
 
 const MIN_KNOWN = 3; // "odd one out" needs at least this many players with the clue
 
@@ -128,6 +128,28 @@ const n = (x) => Math.round(x);
 
 // ---------------------------------------------------------------------------
 // The data the templates look at
+
+/** Joined this game after it started, and has played at least 2 questions since (no ambush on arrival). */
+function lateJoiners(d) {
+  if (!d.g) return [];
+  return d.ids.filter((p) => d.st(p).lateGame === d.g.id && Number.isFinite(d.st(p).joinedQ) && d.g.idx - d.st(p).joinedQ >= 2);
+}
+
+/** "phone", "iPhone", "Samsung", "laptop"… — whatever we know about someone's device. */
+function deviceWord(s) {
+  if (s.device === 'computer') return s.os === 'Mac' ? 'Mac' : 'computer';
+  if (s.device === 'tablet') return s.os === 'iOS' ? 'iPad' : 'tablet';
+  if (s.os === 'iOS') return 'iPhone';
+  if (s.brand && s.brand !== 'Android') return s.brand + ' phone';
+  return 'phone';
+}
+
+/** Points per round so far for a player (history of this game). */
+function roundPoints(d, pid) {
+  return d.H.map((h) => (h.entries.find((e) => e.pid === pid) || {}).points || 0);
+}
+
+const ORD = ['', 'first', 'second', 'third', 'fourth', 'fifth'];
 
 function makeData(room, g, activeIds, ctx) {
   const sig = (pid) => (room.signals && room.signals[pid]) || {};
@@ -597,18 +619,27 @@ const T = [
   // ------------------------------------------------------------------ the group
   {
     id: 'group-late-joiner', cat: 'group', level: 2,
-    text: ["{p1} showed up after the game started. What's the excuse, and what's the real reason?"],
+    text: [
+      "{p1} showed up after the game started. What's the excuse, and what's the real reason?",
+      "{p1} walked in late. Who did {p1} text 'on my way!' while still in bed?",
+      "If {p1} were late to their own wedding, what would the excuse be?",
+      '{p1} missed the first [n] questions. What was {p1} doing that was more fun than this?',
+    ],
     when(d) {
-      const c = d.ids.filter((p) => d.st(p).lateJoin);
-      return c.length ? { bind: { p1: c[c.length - 1] } } : null;
+      const c = lateJoiners(d);
+      return c.length ? { bind: { p1: c[c.length - 1] }, vars: { n: d.st(c[c.length - 1]).joinedQ } } : null;
     },
   },
   {
     id: 'group-before-joined', cat: 'group', level: 3,
-    text: ['What was everybody saying about {p1} before {p1} joined the game?'],
+    text: [
+      'What was everybody saying about {p1} before {p1} joined the game?',
+      "Which of the questions {p1} missed would have been the most dangerous for {p1}?",
+      "{p1} skipped the first [n] questions. What is the one thing {p1} hopes nobody said while they were away?",
+    ],
     when(d) {
-      const c = d.ids.filter((p) => d.st(p).lateJoin);
-      return c.length ? { bind: { p1: c[c.length - 1] } } : null;
+      const c = lateJoiners(d);
+      return c.length ? { bind: { p1: c[c.length - 1] }, vars: { n: d.st(c[c.length - 1]).joinedQ } } : null;
     },
   },
   {
@@ -973,7 +1004,157 @@ const T = [
       return t && t.runnerUp != null && t.runnerUp > t.value ? { bind: { p1: t.pid } } : null;
     },
   },
+
+  // ------------------------------------------------------------------ how they're doing tonight
+  {
+    id: 'perf-judge-fooler', cat: 'perf', level: 3, sim: 'perf-judge',
+    text: [
+      '{p1} has fooled the person the question was about [n] times tonight. What would the title of {p1}\'s autobiography be?',
+      "{p1} keeps writing answers people believe about themselves ([n] times so far). What is {p1}'s day job, really?",
+      '{p1} has tricked the subject of a question [n] times. Finish the sentence: "Trust me, I\'m a…"',
+    ],
+    when(d) {
+      const t = top(d.ids, (p) => d.H.reduce((sum, h) => sum + h.entries.filter((e) => e.pid === p && e.judge).length, 0), { min: 2 });
+      return t ? { bind: { p1: t.pid }, vars: { n: t.value } } : null;
+    },
+  },
+  {
+    id: 'perf-streak', cat: 'perf', level: 3, sim: 'perf-streak',
+    text: [
+      '{p1} has scored in [n] rounds in a row. What is written on the sticky note on the back of {p1}\'s [dev]?',
+      "{p1} is on a [n]-round streak. What's {p1}'s pre-game ritual that nobody has seen?",
+      '[n] rounds in a row with points for {p1}. What would {p1} name this winning streak if it were a racehorse?',
+    ],
+    when(d) {
+      if (d.H.length < 3) return null;
+      const t = top(d.ids, (p) => {
+        const r = roundPoints(d, p);
+        let k = 0;
+        for (let i = r.length - 1; i >= 0 && r[i] > 0; i--) k++;
+        return k;
+      }, { min: 3 });
+      return t ? { bind: { p1: t.pid }, vars: { n: t.value, dev: deviceWord(d.sig(t.pid)) } } : null;
+    },
+  },
+  {
+    id: 'perf-comeback', cat: 'perf', level: 3, sim: 'perf-rank',
+    text: [
+      '{p1} went from last place to [place] place. What did {p1} promise someone to make that happen?',
+      "{p1} was in last place and now is [place]. What's the name of {p1}'s comeback documentary?",
+    ],
+    when(d) {
+      if (d.H.length < 4 || !d.g.scores) return null;
+      const wasLast = (p) => d.H.some((h) => h.rank && h.rank[p] && h.rank[p] === Math.max(...d.ids.map((q) => h.rank[q] || 0)) && h.rank[p] > 1);
+      const nowRank = rankNow(d);
+      const c = d.ids.filter((p) => wasLast(p) && nowRank[p] <= 2);
+      return c.length === 1 ? { bind: { p1: c[0] }, vars: { place: ORD[nowRank[c[0]]] } } : null;
+    },
+  },
+  {
+    id: 'perf-close-race', cat: 'perf', level: 2, sim: 'perf-rank',
+    text: [
+      '{p1} and {p2} are neck and neck at the top. What trash talk is {p1} saving for after the game?',
+      "Only [gap] point[s] between {p1} and {p2}. What will the loser of these two have to do for the winner?",
+      '{p1} and {p2} are fighting for first place. Which childish thing would {p1} do to win?',
+    ],
+    when(d) {
+      if (d.H.length < 4 || !d.g.scores) return null;
+      const order = d.ids.slice().sort((a, b) => (d.g.scores[b] || 0) - (d.g.scores[a] || 0));
+      const [a, b, c] = order;
+      if (!a || !b) return null;
+      const gap = (d.g.scores[a] || 0) - (d.g.scores[b] || 0);
+      if (!d.g.scores[a] || gap > 1 || (c && d.g.scores[c] >= d.g.scores[b])) return null;
+      return { bind: { p1: a, p2: b }, vars: { gap: Math.max(1, gap), s: gap === 1 ? '' : 's' } };
+    },
+  },
+  {
+    id: 'perf-zero', cat: 'perf', level: 2, sim: 'group-score',
+    text: [
+      '{p1} still has zero points. Finish {p1}\'s sentence: "I\'m not losing, I\'m just…"',
+      "{p1} hasn't scored a single point yet. What does {p1}'s [dev] know about this that we don't?",
+    ],
+    when(d) {
+      if (d.H.length < 4 || !d.g.scores) return null;
+      const c = d.ids.filter((p) => !(d.g.scores[p] || 0) && d.H.filter((h) => h.answerers.includes(p)).length >= 3);
+      return c.length === 1 ? { bind: { p1: c[0] }, vars: { dev: deviceWord(d.sig(c[0])) } } : null;
+    },
+  },
+  {
+    id: 'perf-leader-battery', cat: 'perf', level: 3, sim: 'battery',
+    text: [
+      '{p1} is winning with only [pct]% battery left. If the phone dies, who does {p1} accuse of sabotage?',
+      "{p1} is in the lead, but {p1}'s phone is at [pct]%. What will {p1} sacrifice to stay alive: dignity or a charger?",
+    ],
+    when(d) {
+      if (d.H.length < 3 || !d.g.scores) return null;
+      const lead = top(d.ids, (p) => d.g.scores[p] || 0, { min: 1 });
+      const b = lead && d.sig(lead.pid).battery;
+      if (!b || b.charging || b.level > 30 || d.now - b.at > 10 * 60000) return null;
+      return { bind: { p1: lead.pid }, vars: { pct: n(b.level) } };
+    },
+  },
+  {
+    id: 'perf-leader-night', cat: 'perf', level: 4, sim: 'time-night',
+    text: [
+      "It's [time] for {p1} and {p1} is winning. What is {p1} going to say to their boss tomorrow?",
+      '{p1} is leading the game at [time] their time. What is keeping {p1} this sharp so late?',
+    ],
+    when(d) {
+      if (d.H.length < 3 || !d.g.scores) return null;
+      const lead = top(d.ids, (p) => d.g.scores[p] || 0, { min: 1 });
+      const l = lead && d.local[lead.pid];
+      return l && (l.hour >= 23 || l.hour < 4) ? { bind: { p1: lead.pid }, vars: { time: l.time } } : null;
+    },
+  },
+  {
+    id: 'perf-last-device', cat: 'perf', level: 2, sim: 'group-score',
+    text: [
+      "{p1} is in last place. Which app on {p1}'s [dev] is to blame?",
+      "{p1} is at the bottom of the scoreboard. What will {p1}'s [dev] autocorrect 'I lost' into?",
+    ],
+    when(d) {
+      if (!d.g || d.H.length < 4 || !d.g.scores) return null;
+      const t = top(d.ids, (p) => d.g.scores[p] || 0, { min: Infinity, low: true });
+      return t && t.runnerUp != null && t.runnerUp > t.value ? { bind: { p1: t.pid }, vars: { dev: deviceWord(d.sig(t.pid)) } } : null;
+    },
+  },
+  {
+    id: 'perf-fast-and-winning', cat: 'perf', level: 3, sim: 'perf-speed',
+    text: [
+      '{p1} answers the fastest AND is doing great. What is {p1} not telling us about how much they practiced?',
+      "{p1} types the quickest and still scores. What else is {p1} suspiciously fast at?",
+    ],
+    when(d) {
+      if (d.H.length < 3 || !d.g.scores) return null;
+      const speed = (p) => (d.st(p).answers >= 3 ? d.st(p).answerMs / d.st(p).answers : null);
+      const fast = top(d.ids, (p) => (speed(p) == null ? null : -speed(p)));
+      const rank = rankNow(d);
+      return fast && rank[fast.pid] <= 2 && (d.g.scores[fast.pid] || 0) > 0 ? { bind: { p1: fast.pid } } : null;
+    },
+  },
+  {
+    id: 'perf-late-catchup', cat: 'perf', level: 3, sim: 'group-late',
+    text: [
+      '{p1} joined late and has already passed [n] people who were here from the start. What is {p1}\'s secret?',
+      "{p1} missed the beginning and still beat [n] of you. Who should be most embarrassed right now?",
+    ],
+    when(d) {
+      const c = lateJoiners(d);
+      if (!c.length || !d.g.scores) return null;
+      const p = c[c.length - 1];
+      const beat = d.ids.filter((q) => !c.includes(q) && (d.g.scores[q] || 0) < (d.g.scores[p] || 0)).length;
+      return beat >= 1 ? { bind: { p1: p }, vars: { n: beat } } : null;
+    },
+  },
 ];
+
+function rankNow(d) {
+  const r = {};
+  const sc = d.g.scores || {};
+  const vals = d.ids.map((p) => sc[p] || 0);
+  for (const p of d.ids) r[p] = 1 + vals.filter((v) => v > (sc[p] || 0)).length;
+  return r;
+}
 
 // More ways to say each one, so the same situation never sounds the same twice.
 const MORE_WORDINGS = {
@@ -1031,7 +1212,40 @@ const MORE_WORDINGS = {
   'group-first-timer': ["This is {p1}'s first time playing. What does {p1} think is going on right now?"],
   'group-last-place': ['{p1} is in last place. Who is {p1} going to blame for it?'],
 };
+// Psych-style twists: the same clue, asked like a party question.
+const PSYCH_WORDINGS = {
+  'place-odd-country': ["{p1} is in [place] while everyone else is in [others]. What would {p1}'s travel vlog be called?"],
+  'place-far-pair': ['{p1} and {p2} are [km] km apart. If they met halfway, what would they argue about first?'],
+  'place-season': ["It's [s1] for {p1}. If {p1} were a [s1] holiday decoration, what would they be?"],
+  'dev-only-iphone': ["If {p1}'s iPhone could talk, what would it say about {p1}?"],
+  'dev-only-android': ["What is {p1}'s phone wallpaper, and what is it trying to tell us?"],
+  'dev-only-computer': ['{p1} is the only one on a computer. What are the other 14 tabs {p1} has open right now?'],
+  'dev-low-battery': ["{p1}'s phone is at [pct]%. Write the last text {p1} would send before it dies."],
+  'dev-dark-mode': ['{p1} uses dark mode on everything. If {p1} were a villain, what would their evil plan be?'],
+  'lang-odd': ['{p1} has their phone in [lang]. What is the one word in [lang] {p1} uses way too much?'],
+  'net-same-wifi-pair': ["{p1} and {p2} are on the same Wi-Fi. What is the Wi-Fi network's name, honestly?"],
+  'net-mobile-data': ["Finish {p1}'s sentence: \"Sorry, I'm on data, so I…\""],
+  'time-late': ["It's [time] for {p1}. What does {p1}'s 3 a.m. thought sound like?"],
+  'time-early': ["It's [time] for {p1}. What's the first thing {p1} says to the mirror in the morning?"],
+  'time-dinner': ["It's dinner time where {p1} is. If {p1} were a dish on a menu, what would it be called?"],
+  'habit-fast-typer': ['{p1} types super fast. What would be the title of the novel {p1} writes in one night?'],
+  'habit-slow-writer': ['{p1} takes their time with every answer. If {p1} were a snail, what would be written on its shell?'],
+  'habit-deleter': ['{p1} deletes a lot before answering. What was the answer {p1} deleted that would have won the game?'],
+  'habit-leaves-app': ["{p1} keeps leaving the game to check something. What's the name of the app {p1} can't stay away from?"],
+  'habit-quick-voter': ["{p1} votes in a flash. What would {p1}'s campaign slogan be if they ran for mayor?"],
+  'habit-long-answers': ['{p1} writes the longest answers. What would {p1} write in a fortune cookie?'],
+  'habit-short-answers': ["{p1} keeps it short. Describe {p1}'s dream vacation in {p1}'s own style: three words or less."],
+  'habit-chatty': ["{p1} talks the most in the chat. What would {p1}'s talk show be called?"],
+  'habit-emoji': ['{p1} loves [emoji]. If [emoji] were {p1}\'s spirit animal, what would its job be?'],
+  'group-host': ["{p1} is the host tonight. What's the theme song that plays when {p1} enters a room?"],
+  'group-leader': ['{p1} is winning. What will {p1} put on their trophy shelf right next to this win?'],
+  'group-last-place': ["{p1} is in last place. What's the name of {p1}'s comeback album?"],
+  'group-avatar': ['{p1} chose [face] tonight. What would [face] say about {p1} at a roast?'],
+  'habit-crowd-favorite': ["Everyone loves {p1}'s answers. What would {p1}'s fan club be called?"],
+  'habit-crickets': ["{p1}'s answers got crickets [n] times. What's the name of {p1}'s underappreciated art style?"],
+};
 for (const t of T) if (MORE_WORDINGS[t.id]) t.text = [...t.text, ...MORE_WORDINGS[t.id]];
+for (const t of T) if (PSYCH_WORDINGS[t.id]) t.text = [...t.text, ...PSYCH_WORDINGS[t.id]];
 
 // Templates without an explicit similarity group: these share one.
 const SIM = {
@@ -1082,7 +1296,9 @@ export function dynamicCandidates(room, g, activeIds, ctx) {
     const phrase = t.text[Math.floor(random() * t.text.length)];
     // spread these questions over different people too
     const featured = Object.values(b.bind).reduce((sum, pid) => sum + ((g.featured && g.featured[pid]) || 0), 0);
-    out.push({ id, cat: t.cat, sim: simOf(t), level: t.level, text: fill(phrase, b.bind, b.vars), bind: b.bind, weightPenalty: (cats[t.cat] || 0) * 0.5 + featured * 0.3 });
+    // The same kind of clue in an earlier game here (or about the same person) weighs against it too.
+    const before = ((room.simsUsed || {})[simOf(t)] || 0) + Object.values(b.bind).filter((pid) => ((room.simsUsedOn || {})[pid] || []).includes(simOf(t))).length;
+    out.push({ id, cat: t.cat, sim: simOf(t), level: t.level, text: fill(phrase, b.bind, b.vars), bind: b.bind, weightPenalty: (cats[t.cat] || 0) * 0.5 + featured * 0.3 + before * 0.8 });
   }
   return out;
 }
