@@ -230,7 +230,7 @@ function NextGame({ ctrl, view }) {
   return html`<div class="stack next-game" style="width:100%" data-testid="next-game">
     <div class="card">
       <div class="card-title">🔁 Ready for game ${g.number + 1}?</div>
-      <p style="margin:0">Same room and players. Scores start from zero, the trophy cabinet keeps counting, and the AI never asks a question twice.</p>
+      <p style="margin:0">Same room and players. Scores start from zero, the trophy cabinet keeps counting, and the app never asks a question twice.</p>
     </div>
     <${Settings} ctrl=${ctrl} info=${info} title=${`Settings for game ${g.number + 1}`} />
     <p class="muted small center" style="margin:0">${pool.total ? `${pool.total} fresh question${pool.total === 1 ? '' : 's'} left${pool.total < info.settings.rounds ? ` — this game will be ${pool.total} long` : ''}.` : 'No fresh questions left — go back to the lobby to load another deck or reset.'}</p>
@@ -345,13 +345,13 @@ export function FinalPhase({ ctrl, view }) {
           <b style="font-family:var(--display);font-size:22px">${r.score}</b>
         </div>`)}
       </div>
-      ${f.reason === 'out-of-questions' && html`<p class="muted small">The AI ran out of fresh questions for this group, so the game ended early.</p>`}
+      ${f.reason === 'out-of-questions' && html`<p class="muted small">The app ran out of fresh questions for this group, so the game ended early.</p>`}
       <${Trophies} view=${view} who=${who} />
       ${isHost
         ? html`<${NextGame} ctrl=${ctrl} view=${view} />`
         : html`<div class="card next-game" style="width:100%">
             <div class="card-title">🔁 Game ${g.number + 1} is coming up</div>
-            <p style="margin:0">Same room, same players, <b>fresh scores</b> — and the AI still remembers everything (no question is ever asked twice).</p>
+            <p style="margin:0">Same room, same players, <b>fresh scores</b> — and the app still remembers everything (no question is ever asked twice).</p>
             <p class="script" style="font-size:22px;margin:8px 0 0">The host is choosing the settings<span class="dots"></span></p>
           </div>`}
     `}

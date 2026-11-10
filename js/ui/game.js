@@ -64,7 +64,7 @@ export function AiIntro({ view, onDone }) {
     }
   }, [step]);
   return html`<div class="card ai-intro enter" onClick=${onDone} data-testid="ai-intro">
-    ${g.idx === 0 && g.number > 1 && html`<div class="new-game-banner" data-testid="new-game-banner">🎉 Game ${g.number} — fresh scores! (The AI remembers everything, though.)</div>`}
+    ${g.idx === 0 && g.number > 1 && html`<div class="new-game-banner" data-testid="new-game-banner">🎉 Game ${g.number} — fresh scores! (The questions remember everything, though.)</div>`}
     <div class="ai-title">🤖 ${generic ? 'The AI is trying to write' : kind === 'clue' ? 'The AI noticed something — question' : 'The AI is writing'} ${kind === 'clue' ? '' : 'question '}${g.idx + 1}/${g.n}<span class="dots"></span></div>
     <${Bot} level=${level} />
     <div class="ai-lines">
@@ -91,9 +91,9 @@ export function QuestionCard({ view, animate = true, compact }) {
   </div>`;
 }
 
-/** A short code for every question: B = built in, D = from the deck, AI = built from clues. */
+/** A short code for every question: B = built in, D = from the deck, N = built from what the app noticed. */
 export function questionCode(id) {
-  const kind = { s: 'B', d: 'D', x: 'AI' }[id[0]] || 'Q';
+  const kind = { s: 'B', d: 'D', x: 'N' }[id[0]] || 'Q';
   return `#${kind}-${(id[0] === 'x' ? hash(id) : id.slice(1)).slice(0, 5).toUpperCase()}`;
 }
 
@@ -452,7 +452,7 @@ export function HostDock({ ctrl, view }) {
       <div class="row" style="margin-bottom:10px">${missing.map((pid) => html`<span key=${pid} class="chip">${who(pid).avatar} ${who(pid).name}</span>`)}</div>
       <p class="muted small">${phase === 'answer'
         ? noneSubmitted
-          ? "Whatever they've typed so far will be used. If nobody typed anything, the AI writes a new question."
+          ? "Whatever they've typed so far will be used. If nobody typed anything, the app picks a new question."
           : "Whatever they've typed so far is sent for them (they can still vote)."
         : "Picked-but-not-locked votes count. Anyone who didn't vote gets no points for their own answer this round."}</p>
       <div class="stack" style="gap:10px">
@@ -479,7 +479,7 @@ export function HostDock({ ctrl, view }) {
         : `Picked-but-not-locked votes count. Anyone who didn't vote${missing.length ? ` (${missing.map((p) => who(p).name).join(', ')})` : ''} gets no points for their own answer.`}
       yes=${phase === 'answer' ? 'Start voting' : 'Show results'} onNo=${() => setConfirm(null)} onYes=${moveOn} />`}
     ${confirm === 'skip' &&
-    html`<${Confirm} title="Skip this question?" text="Everyone's answers are thrown away and the AI writes a brand-new question for this round." yes="Skip it"
+    html`<${Confirm} title="Skip this question?" text="Everyone's answers are thrown away and the app picks a brand-new question for this round." yes="Skip it"
       onNo=${() => setConfirm(null)} onYes=${() => { setConfirm(null); ctrl.dispatch({ type: 'skipQuestion' }); sfx('whistleDown'); }} />`}
     ${confirm === 'end' &&
     html`<${Confirm} title="End the game?" text="Scores are wiped and everyone goes back to the lobby. Used questions stay used." yes="End game"

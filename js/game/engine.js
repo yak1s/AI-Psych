@@ -571,7 +571,7 @@ function computeAwards(room, g, ranking) {
   const candidates = [
     { id: 'judge', emoji: '⚖️', title: "The Judge's Pet", t: tally((e) => e.judge), detail: (v) => `${v} double-point votes` },
     { id: 'crowd', emoji: '📣', title: 'Crowd Pleaser', t: tally((e) => e.crowd), detail: (v) => `${v} votes from the crowd` },
-    { id: 'famous', emoji: '🔎', title: 'Most Investigated', t: per((h, t) => h.about.forEach((p) => add(t, p))), detail: (v) => `the AI asked about them ${v} times` },
+    { id: 'famous', emoji: '🔎', title: 'Most Investigated', t: per((h, t) => h.about.forEach((p) => add(t, p))), detail: (v) => `the app asked about them ${v} times` },
     { id: 'ghost', emoji: '👻', title: 'The Mysterious Ghost', t: per((h, t) => h.answerers.forEach((p) => { const e = h.entries.find((x) => x.pid === p); if (!e || !e.points) add(t, p); })), detail: (v) => `${v} rounds without a single point`, min: 2 },
     { id: 'hot', emoji: '🔥', title: 'On Fire', t: tally((e) => (e.points >= 3 ? 1 : 0)), detail: (v) => `${v} rounds with 3+ points` },
     { id: 'sharp', emoji: '🎯', title: 'The Sharpshooter', t: per((h, t) => { const m = Math.max(0, ...h.entries.map((e) => e.points)); if (m) h.entries.filter((e) => e.points === m).forEach((e) => add(t, e.pid)); }), detail: (v) => `won ${v} rounds outright` },

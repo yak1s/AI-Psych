@@ -8,10 +8,10 @@ import { notifyState, enableNotify, disableNotify } from './notify.js';
 import { fullscreenSupported, fullscreenWanted, setFullscreen } from './fullscreen.js';
 
 const WELCOMES = [
-  'Welcome, {name}! The AI already started a file on you. 📁',
+  'Welcome, {name}! Your seat is warm and your file is open. 📁',
   '{name} just walked in. Act natural, everyone.',
-  'Say hi to {name}! (The AI is updating its questions…)',
-  '{name} has entered the chat. The AI noticed. 👀',
+  'Say hi to {name}! (The questions just got more interesting…)',
+  '{name} has entered the chat. Everyone noticed. 👀',
   'Everybody wave at {name}! 👋',
 ];
 const BACK = ['{name} is back! 🎉', 'Welcome back, {name} — your seat (and score) were waiting.', '{name} found their way back in. 🧭'];

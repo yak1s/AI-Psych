@@ -100,7 +100,7 @@ There are 79 kinds of clue questions with 159 different wordings. They're groupe
 
 ### Questions are never repeated
 
-Every question has a short code (shown on the card: `#B-…` built in, `#D-…` deck, `#AI-…` clue). Every device remembers which questions it has played — as host or as player, in any room — and tells the host when it joins. The host then prefers questions **nobody in the room has played**, then the ones the fewest people saw (and the fewest times). The lobby shows how many built-in questions are still fresh for this group.
+Every question has a short code (shown on the card: `#B-…` built in, `#D-…` deck, `#N-…` noticed). Every device remembers which questions it has played — as host or as player, in any room — and tells the host when it joins. The host then prefers questions **nobody in the room has played**, then the ones the fewest people saw (and the fewest times). The lobby shows how many built-in questions are still fresh for this group.
 
 ### Placeholders
 
