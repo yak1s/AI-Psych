@@ -49,7 +49,9 @@ export function HandoverNote({ view }) {
   if (!shown || shown.to === view.me) return null;
   const who = playerMap(view);
   return html`<div class="greet-banner" role="status" data-testid="handover">
-    <span>👑 ${who(shown.from).name}'s connection is gone — ${who(shown.to).name} is hosting now. The game goes on!</span>
+    <span>${shown.back
+      ? `👑 ${who(shown.to).name} is back and hosting again. Thanks for filling in, ${who(shown.from).name}!`
+      : `👑 ${who(shown.from).name}'s connection is gone — ${who(shown.to).name} is hosting now. The game goes on!`}</span>
   </div>`;
 }
 

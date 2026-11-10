@@ -457,6 +457,26 @@ test('another device can take over hosting with the game intact', () => {
   assert.deepEqual(E.demotedIdentity(snap, t.ids.Host).pid, t.ids.Host);
 });
 
+test('hosting goes back to the original host when it returns, until it dropped 3 times', () => {
+  const t = setup();
+  t.act('Host', { type: 'start' });
+  const room = t.room;
+  for (let drop = 1; drop <= 3; drop++) {
+    assert.ok(E.promote(room, t.ids.Ann, { now: t.ctx.now }));
+    assert.equal(room.hostDrops[t.ids.Host], drop);
+    assert.ok(!E.shouldHandBack(room, t.ids.Bob), 'only the original host');
+    if (drop < 3) {
+      assert.ok(E.shouldHandBack(room, t.ids.Host));
+      assert.ok(E.promote(room, t.ids.Host, { now: t.ctx.now, handback: true }));
+      assert.equal(room.hostPid, t.ids.Host);
+      assert.ok(room.handover.back);
+      assert.equal(room.hostDrops[t.ids.Host], drop, 'a hand-back is not a drop');
+    }
+  }
+  assert.ok(!E.shouldHandBack(room, t.ids.Host), 'gave up after 3 drops');
+  assert.equal(room.epoch, 5);
+});
+
 test('a disconnected player can get their seat back by name; mid-game joins need the host', () => {
   const t = setup();
   t.act('Host', { type: 'start' });

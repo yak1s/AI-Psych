@@ -43,13 +43,13 @@ export class HostController {
    * The host vanished and this device was next in line: carry on hosting from the
    * last backup. Everyone's devices find the new host by themselves.
    */
-  static fromBackup(backup, pid, onChange) {
+  static fromBackup(backup, pid, onChange, opts = {}) {
     const room = backup.room;
     if (!room || !E.getPlayer(room, pid)) return null;
     const deck = local.get(KEYS.backupDeck);
     room.deck = backup.deckSig && deck && deck.sig === backup.deckSig ? deck.deck : null;
     if (!room.deck) room.assign = {};
-    E.promote(room, pid, { now: Date.now(), snapAt: backup.at });
+    E.promote(room, pid, { now: Date.now(), snapAt: backup.at, handback: !!opts.handback, minEpoch: opts.minEpoch || 0 });
     room.used = [...new Set([...room.used, ...local.get(KEYS.played, [])])];
     local.del(KEYS.player);
     local.del(KEYS.backup);
@@ -186,13 +186,48 @@ export class HostController {
   // ---------------------------------------------------------------- hand-over
 
   /** Another device hosts this room now (we were away too long): become a player. */
-  _superseded(epoch) {
+  _superseded(epoch, why = {}) {
     if (this.demoted) return;
     this.demoted = true;
+    if (this.handingOver) why = { ...why, handback: true };
     const identity = { ...E.demotedIdentity(this.room), epoch };
     this.detach();
     local.del(KEYS.host);
-    if (this.onDemote) this.onDemote(identity);
+    if (this.onDemote) this.onDemote(identity, why);
+  }
+
+  /**
+   * The device that started the room is back online: give hosting back to it.
+   * It gets a full copy of the game, and this device carries on as a player.
+   */
+  _scheduleHandback(pid) {
+    if (this._handback || this.demoted) return;
+    this._handback = setTimeout(() => {
+      this._handback = null;
+      // Only if it stayed connected for a few seconds (a flaky phone keeps the game where it is).
+      if (this.demoted || !this.net.onlinePids().includes(pid) || !E.shouldHandBack(this.room, pid)) return;
+      this._handOver(pid);
+    }, TIMING.handbackMs || 4000);
+  }
+
+  async _handOver(pid) {
+    const room = this.room;
+    this.handingOver = true; // stop taking actions: players re-send them to the next host
+    const at = Date.now();
+    const sig = room.deck ? hash(room.deck.questions.map((q) => q.id).join(',')) : null;
+    const lite = { ...room, deck: null };
+    const [body, deck] = await Promise.all([pack(lite), room.deck ? pack(room.deck) : null]);
+    if (this.demoted) return;
+    const next = (room.epoch || 0) + 1;
+    this.net.send(pid, { t: 'take-host', at, deckSig: sig, deck, room: body });
+    // Keep a copy here too: if the old host fails to start, this device can take over again.
+    local.set(KEYS.backup, { rank: 0, at, recvAt: Date.now(), deckSig: sig, room: JSON.parse(JSON.stringify(lite)) });
+    if (room.deck) local.set(KEYS.backupDeck, { sig, deck: room.deck });
+    setTimeout(() => {
+      if (this.demoted) return;
+      for (const p of this.net.onlinePids()) if (p !== pid) this.net.send(p, { t: 'moving', epoch: next });
+      setTimeout(() => this._superseded(next, { handback: true, to: pid }), 400);
+    }, 1500);
   }
 
   /** Keep a compressed backup of the whole game on the next devices in line. */
@@ -389,6 +424,7 @@ export class HostController {
   }
 
   dispatch(action) {
+    if (this.handingOver) return { ok: false, error: 'moving' };
     this._playStats(this.room.hostPid, action);
     const res = E.apply(this.room, this.room.hostPid, action, this.ctx());
     if (res.ok) {
@@ -420,6 +456,7 @@ export class HostController {
   /** Stop without saving — another tab has taken over and owns the saved state now. */
   detach() {
     clearInterval(this._tick);
+    clearTimeout(this._handback);
     clearTimeout(this._backupTimer);
     this._offSignals && this._offSignals();
     this.net.stop();
@@ -457,6 +494,7 @@ export class HostController {
       if (p.isHost) return this._reject(link, 'unknown');
       this._welcome(link, p);
       this.commit();
+      if (E.shouldHandBack(room, p.id)) this._scheduleHandback(p.id);
       return;
     }
     // New player. A retried join (lost welcome) is recognised by its joinId.
@@ -515,7 +553,7 @@ export class HostController {
   }
 
   _action(pid, msg) {
-    if (!msg.id || !msg.a) return;
+    if (!msg.id || !msg.a || this.handingOver) return;
     if (E.seenAction(this.room, pid, msg.id)) {
       this.net.send(pid, { t: 'ack', id: msg.id, ok: true, dup: true });
       return;

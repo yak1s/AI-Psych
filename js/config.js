@@ -41,6 +41,7 @@ export const TIMING = {
   heartbeat: 2000, // ping every 2s
   deadAfter: 9000, // no message for 9s => connection is dead, reconnect
   connectTimeout: 12000, // give ICE this long to connect before retrying
+  handbackMs: 4000, // the room's original host must stay back this long before hosting returns to it
 };
 
 // ---------------------------------------------------------------------------

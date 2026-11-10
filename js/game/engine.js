@@ -67,6 +67,7 @@ export function createRoom({ code, host }) {
   const res = addPlayer(room, host, { isHost: true });
   if (!res.ok) throw new Error(res.error);
   room.hostPid = res.player.id;
+  room.originalHost = res.player.id; // gets hosting back after a drop (until it drops too often)
   return room;
 }
 
@@ -718,20 +719,37 @@ export function tick(room, ctx) {
 export function promote(room, newHostPid, ctx) {
   const p = getPlayer(room, newHostPid);
   if (!p || p.gone) return false;
+  const from = room.hostPid;
+  const original = originalHost(room);
   for (const x of room.players) x.isHost = x.id === newHostPid;
-  room.prevHosts = [...new Set([...(room.prevHosts || []), room.hostPid])];
+  room.prevHosts = [...new Set([...(room.prevHosts || []), from])];
+  // Count how often the original host's connection let everyone down.
+  if (!ctx.handback && from === original) room.hostDrops = { ...(room.hostDrops || {}), [from]: ((room.hostDrops || {})[from] || 0) + 1 };
   room.hostPid = newHostPid;
-  room.epoch = (room.epoch || 0) + 1;
+  room.epoch = Math.max(room.epoch || 0, ctx.minEpoch || 0) + 1;
   room.seq += 1000; // devices never take an older state over a newer one
   const g = room.game;
   if (g && g.timer) {
     const snapAt = ctx.snapAt || ctx.now;
     const remaining = g.timer.endsAt - snapAt;
-    g.timer.endsAt = ctx.now + Math.max(remaining, 20000);
+    g.timer.endsAt = ctx.now + Math.max(remaining, ctx.handback ? 8000 : 20000);
     g.timer.start = ctx.now + Math.max(0, (g.timer.start || 0) - snapAt);
   }
-  room.handover = { from: room.prevHosts[room.prevHosts.length - 1], to: newHostPid, at: ctx.now };
+  room.handover = { from, to: newHostPid, at: ctx.now, back: !!ctx.handback };
   return true;
+}
+
+/** Who started the room (falls back to the first host on record). */
+export function originalHost(room) {
+  return room.originalHost || (room.prevHosts && room.prevHosts[0]) || room.hostPid;
+}
+
+/** The original host is back: should hosting go back to it? (Not after 3 drops.) */
+export const MAX_HOST_DROPS = 3;
+export function shouldHandBack(room, pid) {
+  if (pid === room.hostPid || pid !== originalHost(room)) return false;
+  const p = getPlayer(room, pid);
+  return !!p && !p.gone && ((room.hostDrops || {})[pid] || 0) < MAX_HOST_DROPS;
 }
 
 /** The host moved to another device while this one was away: this one is a player now. */

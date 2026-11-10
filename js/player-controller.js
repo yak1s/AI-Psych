@@ -64,14 +64,29 @@ export class PlayerController {
     // Judge by what the host actually said: a connection can look open while the host is silent.
     const b = this._backup();
     if (!b || b.rank < 0 || b.room.roomId !== this.identity.roomId) return;
-    if (this.net.epoch > (b.room.epoch || 0)) return; // someone already took over: just find them
     const now = Date.now();
+    // Someone already took over: just find them (unless that new host never showed up at all).
+    if (this.net.epoch > (b.room.epoch || 0) && now - this.net.lastHeard < takeoverMs() * 2.5) return;
     if (now - b.recvAt > 30 * 60000) return; // too old to trust
     if (now - this.net.lastHeard < takeoverMs() * (1 + b.rank * 1.2)) return;
     // Only if *this* device has internet (otherwise it's us who's lost, not the host).
     const since = this.net.onlineSince;
     if (!since || now - since < Math.min(10000, takeoverMs() * 0.4)) return;
-    this.onPromote(b);
+    this.onPromote(b, { minEpoch: this.net.epoch });
+  }
+
+  /** The room's original host is me, and I'm back: the stand-in host hands hosting back. */
+  async _takeHost(m) {
+    if (this.ended || !this.onPromote || this._taking) return;
+    this._taking = true;
+    try {
+      const room = await unpack(m.room);
+      if (room.roomId !== this.identity.roomId) return;
+      if (m.deck) local.set(KEYS.backupDeck, { sig: m.deckSig, deck: await unpack(m.deck) });
+      this.onPromote({ rank: 0, at: m.at, recvAt: Date.now(), deckSig: m.deckSig, room }, { handback: true, minEpoch: this.net.epoch });
+    } catch {
+      this._taking = false;
+    }
   }
 
   _backup() {
@@ -233,6 +248,11 @@ export class PlayerController {
         this.welcomed = true;
         this.holding = null;
         if (m.epoch > this.net.epoch) this.net.adopt(m.epoch);
+        // A backup from an earlier host is useless now (the current host sends fresh ones).
+        if ((m.epoch || 0) > ((this._backup() || { room: {} }).room.epoch || 0)) {
+          this._backupCache = null;
+          local.del(KEYS.backup);
+        }
         for (const item of this.pending) this.net.send({ t: 'act', id: item.id, a: item.a });
         if (this.draft) this.net.send(this.draft);
         if (this.voteDraft) this.net.send(this.voteDraft);
@@ -271,6 +291,13 @@ export class PlayerController {
           this.holding = { claim: !!m.claim, since: Date.now() };
           this.emit();
         }
+        break;
+      case 'take-host':
+        this._takeHost(m);
+        break;
+      case 'moving':
+        // Hosting is moving to another device (the original host is back): follow it.
+        if (Number.isFinite(m.epoch)) this.net.adopt(m.epoch);
         break;
       case 'backup':
       case 'backup-deck':

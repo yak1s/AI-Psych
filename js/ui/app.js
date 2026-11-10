@@ -194,21 +194,26 @@ export function App({ boot }) {
     ctrlRef.current = c;
     if (c && c instanceof PlayerController) {
       // The host vanished and this device is next in line: it becomes the host.
-      c.onPromote = (backup) => {
-        const h = HostController.fromBackup(backup, c.identity.pid, rerender);
+      c.onPromote = (backup, opts = {}) => {
+        const h = HostController.fromBackup(backup, c.identity.pid, rerender, opts);
         if (!h) return;
-        h.toast = { info: true, text: "The host disappeared — you're hosting now so the game can go on! 👑", at: Date.now() };
+        h.toast = opts.handback
+          ? { info: true, text: "Welcome back — you're the host again! 👑", at: Date.now() }
+          : { info: true, text: "The host disappeared — you're hosting now so the game can go on! 👑", at: Date.now() };
         claimHost(h);
         setCtrl(h);
       };
     }
     if (c && c instanceof HostController) {
       // Another device took over hosting while this one was away: carry on as a player.
-      c.onDemote = (identity) => {
+      c.onDemote = (identity, why = {}) => {
         local.set(KEYS.player, { ...identity, savedAt: Date.now() });
         session.set(KEYS.role, { role: 'player', code: identity.code });
         const p = PlayerController.resume(rerender);
-        if (p) p.toast = { info: true, text: 'While you were away, someone else took over hosting. You are still in the game!', at: Date.now() };
+        if (p)
+          p.toast = why.handback
+            ? { info: true, text: 'The original host is back, so hosting went back to them. Thanks for filling in! 👑', at: Date.now() }
+            : { info: true, text: 'While you were away, someone else took over hosting. You are still in the game!', at: Date.now() };
         setCtrl(p);
       };
     }

@@ -313,7 +313,7 @@ test('waiting-room chat only reaches people who are waiting, with reactions; vot
   for (const p of [host, ann, bob, cid]) await p.context().close();
 });
 
-test('the host vanishes mid-game: the next device takes over, nobody loses their turn, the old host comes back as a player', { timeout: 180000 }, async () => {
+test('the host vanishes mid-game: the next device takes over, nobody loses their turn, the old host comes back and gets hosting back', { timeout: 220000 }, async () => {
   const opts = { net: 'takeover=8000' };
   const { host, code } = await hostRoom(world, 'Hosty', opts);
   const ann = await joinRoom(world, code, 'Ann', opts);
@@ -347,10 +347,14 @@ test('the host vanishes mid-game: the next device takes over, nobody loses their
   await tap(bob, 'submit-answer');
   await until(() => state(ann, (c) => Object.values(c.room.game.answers).some((a) => a.text === 'answered to the new host')), 20000);
 
-  // The old host comes back: it notices it was replaced and rejoins as a normal player.
+  // The old host comes back: it notices it was replaced, rejoins, and gets hosting back.
   await until(() => state(host, (c) => c && !c.isHost && c.welcomed), 70000);
-  assert.equal(await state(host, (c) => c.view.hostPid === c.pid), false);
-  await until(async () => (await state(ann, (c) => c.net.onlinePids())).length === 2, 20000);
+  await until(() => state(host, (c) => c && c.isHost === true), 30000);
+  assert.equal(await state(host, (c) => c.room.epoch), 2);
+  assert.ok(await state(host, (c) => Object.values(c.room.game.answers).some((a) => a.text === 'answered to the new host')), 'nothing lost on the way back');
+  await until(() => state(ann, (c) => c && !c.isHost && c.welcomed), 30000);
+  await until(() => state(bob, (c) => c.welcomed && c.view && c.view.hostPid === c.view.players.find((p) => p.name === 'Hosty').id), 30000);
+  await until(async () => (await state(host, (c) => c.net.onlinePids())).length === 2, 20000);
   for (const p of [host, ann, bob]) await p.context().close();
 });
 
