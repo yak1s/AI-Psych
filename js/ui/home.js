@@ -31,7 +31,7 @@ export function HowToPlay({ onClose }) {
 
 export function Home({ onHost, onJoin, resumeHost, resumePlayer, onResumeHost, onResumePlayer, onForgetHost, onForgetPlayer }) {
   const [rules, setRules] = useState(false);
-  return html`<div class="screen enter">
+  return html`<div class="screen enter home-screen">
     <div class="stack" style="align-items:center;gap:22px">
       <${Logo} />
       <p class="tagline">The party game where a very curious app asks questions about <u>you</u>.</p>

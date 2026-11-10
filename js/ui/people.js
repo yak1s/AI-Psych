@@ -127,6 +127,11 @@ export function PlayersPanel({ ctrl, view, onClose }) {
 /** Reminders and full screen, side by side (lobby and menu). */
 export function DeviceToggles({ card = true }) {
   const [, bump] = useState(0);
+  useEffect(() => {
+    const f = () => bump((x) => x + 1);
+    addEventListener('aipsych-fullscreen', f);
+    return () => removeEventListener('aipsych-fullscreen', f);
+  }, []);
   const ns = notifyState();
   const fs = fullscreenSupported();
   if (ns === 'unsupported' && !fs) return null;

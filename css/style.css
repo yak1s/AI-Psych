@@ -121,6 +121,12 @@ body[data-mood='5'] .vignette { animation: breathe 5s ease-in-out infinite; }
 
 .screen { position: relative; z-index: 1; width: 100%; max-width: 680px; margin: 0 auto; padding: 8px 16px calc(120px + env(safe-area-inset-bottom)); flex: 1; }
 .screen.wide { max-width: 1080px; }
+@media (max-height: 720px) {
+  .home-screen .logo { margin-top: 4px; }
+  .home-screen .logo-word { font-size: clamp(48px, min(16vw, 13vh), 104px); }
+  .home-screen > .stack { gap: 14px !important; }
+}
+.screen.home-screen { padding-bottom: calc(20px + env(safe-area-inset-bottom)); } /* no dock here: no room kept for it */
 .stack { display: flex; flex-direction: column; gap: 16px; }
 .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .row.center { justify-content: center; }
@@ -487,6 +493,8 @@ body.spotlight .spotlight-layer { opacity: 1; }
 .modal-bg { position: fixed; inset: 0; z-index: 70; background: rgba(45, 42, 74, 0.45); display: grid; place-items: center; padding: 16px; animation: fade-in 0.25s both; }
 .modal { max-width: 460px; width: 100%; animation: pop-in 0.45s var(--bounce) both; max-height: calc(100dvh - 40px); overflow: auto; }
 .modal h2 { margin-bottom: 8px; }
+/* the sketchy second outline stays inside, so a dialog that fits never gets a scrollbar */
+.modal:not(.big)::after { inset: 4px; }
 .toast {
   position: fixed; left: 50%; top: calc(66px + env(safe-area-inset-top)); z-index: 80; transform: translateX(-50%); padding: 10px 18px;
   border: 2.5px solid var(--ink); border-radius: var(--wobble); background-image: var(--wash-coral); background-color: var(--card); background-size: 100% 100%;

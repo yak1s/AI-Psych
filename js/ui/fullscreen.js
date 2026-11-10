@@ -34,4 +34,14 @@ export function installAutoFullscreen() {
   };
   addEventListener('pointerup', go, { passive: true });
   addEventListener('keydown', (e) => e.key === 'Enter' && go());
+  // On a computer, leaving full screen with Esc or the browser's own button means "off".
+  // (Phones lose full screen all the time — app switching, the keyboard — so there it comes back.)
+  const changed = () => {
+    if (!isFullscreen() && !coarse() && fullscreenWanted()) {
+      local.set(KEYS.fullscreen, false);
+      dispatchEvent(new Event('aipsych-fullscreen'));
+    }
+  };
+  document.addEventListener('fullscreenchange', changed);
+  document.addEventListener('webkitfullscreenchange', changed);
 }
