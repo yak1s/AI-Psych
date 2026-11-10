@@ -60,6 +60,25 @@ function top(ids, fn, { min = -Infinity, unique = true, low = false } = {}) {
   return { pid: rows[0][0], value: rows[0][1], runnerUp: rows[1] ? rows[1][1] : null };
 }
 
+/**
+ * Location from the internet connection is only trusted on Wi-Fi/wired with a city
+ * (phone carriers often place people in the wrong town). */
+function ipOk(d, p) {
+  const s = d.sig(p);
+  return !!(s.precise && s.city && s.ll && s.conn !== 'cellular');
+}
+
+/** Everyone's connection type is known, and exactly one person is on mobile data. */
+function onlyOnMobile(d, extra = () => true) {
+  const c = d.ids.filter((p) => d.sig(p).conn === 'cellular');
+  if (c.length !== 1 || !extra(c[0])) return null;
+  const others = d.ids.filter((p) => p !== c[0]);
+  if (others.length < 2 || !others.every((p) => ['wifi', 'ethernet'].includes(d.sig(p).conn))) return null;
+  const net = d.sig(c[0]).netId;
+  if (net && others.some((p) => d.sig(p).netId === net)) return null; // contradicting clues
+  return c[0];
+}
+
 const RAD = Math.PI / 180;
 function km(a, b) {
   if (!a || !b) return null;
@@ -142,8 +161,11 @@ const T = [
     id: 'place-odd-region', cat: 'place', level: 3,
     text: ['Everybody else is around [others]. {p1} is the only one near [place]. Who or what is {p1} with right now?'],
     when(d) {
+      // Only with trustworthy locations for everyone, and really far from all the others.
+      if (!d.ids.every((p) => ipOk(d, p))) return null;
       const o = oddOneOut(d.ids, (p) => d.sig(p).area);
       if (!o || d.sig(o.pid).country !== d.sig(o.othersIds[0]).country) return null; // same country, different area
+      if (o.othersIds.some((p) => km(d.sig(p).ll, d.sig(o.pid).ll) < 150)) return null;
       return { bind: { p1: o.pid }, vars: { place: o.value, others: o.others } };
     },
   },
@@ -169,8 +191,11 @@ const T = [
     id: 'place-same-city-pair', cat: 'place', level: 4,
     text: ['{p1} and {p2} are the only two in [place]. What are they planning without the rest of you?'],
     when(d) {
+      if (!d.ids.every((p) => ipOk(d, p))) return null;
       const p = onlyPair(d.ids, (x) => d.sig(x).city || null);
-      return p ? { bind: { p1: p.pids[0], p2: p.pids[1] }, vars: { place: p.value } } : null;
+      if (!p) return null;
+      if (d.ids.some((x) => !p.pids.includes(x) && km(d.sig(x).ll, d.sig(p.pids[0]).ll) < 100)) return null; // the others are just next door
+      return { bind: { p1: p.pids[0], p2: p.pids[1] }, vars: { place: p.value } };
     },
   },
   {
@@ -185,8 +210,11 @@ const T = [
     id: 'place-city', cat: 'place', level: 5,
     text: ["The app knows {p1} is near [city]. What's the place there {p1} goes to that nobody in this game knows about?"],
     when(d) {
-      const ids = d.ids.filter((p) => d.sig(p).city && d.sig(p).precise);
-      if (ids.length < 2) return null;
+      // A city is only named when another trusted device places someone in the same city too,
+      // and nobody else's location argues with it.
+      const ok = d.ids.filter((p) => ipOk(d, p));
+      const ids = ok.filter((p) => ok.some((q) => q !== p && d.sig(q).city === d.sig(p).city));
+      if (ids.length < 2 || ok.length < d.ids.length - 1) return null;
       const pid = ids[Math.floor(random() * ids.length)];
       return { bind: { p1: pid }, vars: { city: d.sig(pid).city } };
     },
@@ -341,8 +369,8 @@ const T = [
     id: 'net-mobile-data', cat: 'net', level: 3,
     text: ['{p1} is playing on mobile data, not Wi-Fi. Where is {p1} right now that has no Wi-Fi?'],
     when(d) {
-      const c = d.ids.filter((p) => d.sig(p).conn === 'cellular');
-      return c.length === 1 ? { bind: { p1: c[0] } } : null;
+      const c = onlyOnMobile(d);
+      return c ? { bind: { p1: c } } : null;
     },
   },
   {
@@ -675,6 +703,7 @@ const T = [
       for (let i = 0; i < d.ids.length; i++)
         for (let j = i + 1; j < d.ids.length; j++) {
           const k = km(d.sig(d.ids[i]).ll, d.sig(d.ids[j]).ll);
+          if (!ipOk(d, d.ids[i]) || !ipOk(d, d.ids[j])) continue; // short distances need trustworthy locations
           if (k != null && k > 2 && (!best || k < best.k)) best = { k, a: d.ids[i], b: d.ids[j] };
         }
       if (!best || best.k > 60) return null;
@@ -782,8 +811,8 @@ const T = [
     id: 'net-mobile-low-battery', cat: 'net', level: 4, sim: 'battery',
     text: ["{p1} is on mobile data with [pct]% battery left. Where exactly is {p1} right now — and who are they hiding from?"],
     when(d) {
-      const c = d.ids.filter((p) => d.sig(p).conn === 'cellular' && d.sig(p).battery && !d.sig(p).battery.charging && d.sig(p).battery.level < 35);
-      return c.length === 1 ? { bind: { p1: c[0] }, vars: { pct: d.sig(c[0]).battery.level } } : null;
+      const c = onlyOnMobile(d, (p) => d.sig(p).battery && !d.sig(p).battery.charging && d.sig(p).battery.level < 35);
+      return c ? { bind: { p1: c }, vars: { pct: d.sig(c).battery.level } } : null;
     },
   },
   {

@@ -513,6 +513,34 @@ test('clue questions: built from device clues, only when the condition holds, ca
   assert.ok(!dynamicCandidates(t.room, g, t.room.players.map((p) => p.id), t.ctx).some((x) => x.cat === 'place'), 'category cap');
 });
 
+test('clue questions never state shaky facts (mobile data, IP-based towns)', () => {
+  const t = setup();
+  t.act('Host', { type: 'start' });
+  const g = t.room.game;
+  g.idx = 2;
+  const ids = t.room.players.map((p) => p.id);
+  const ny = (city, ll, conn) => ({ tz: 'America/New_York', country: 'US', countryName: 'the US', area: 'New York', city, precise: true, ll, conn });
+  const cands = () => dynamicCandidates(t.room, g, ids, t.ctx).map((x) => x.id);
+  // One phone on mobile data, but nobody else's connection is known: no "mobile data" question.
+  t.room.signals = { [t.ids.Host]: ny('Brooklyn', [40.7, -73.9], null), [t.ids.Ann]: ny('Brooklyn', [40.7, -73.9], null), [t.ids.Bob]: ny('Brooklyn', [40.7, -73.9], null), [t.ids.Cid]: ny('Babylon', [40.7, -73.3], 'cellular') };
+  let c = cands();
+  assert.ok(!c.includes('xnet-mobile-data'), c.join(','));
+  assert.ok(!c.some((id) => /place-(same-city-pair|odd-region|neighbors)/.test(id)), 'a carrier IP is no proof of a town: ' + c.join(','));
+  for (let i = 0; i < 20; i++) assert.ok(!dynamicCandidates(t.room, g, ids, t.ctx).some((x) => /Babylon/.test(x.text)));
+  // Everybody else is known to be on Wi-Fi: now it's a fact.
+  for (const n of ['Host', 'Ann', 'Bob']) t.room.signals[t.ids[n]].conn = 'wifi';
+  c = cands();
+  assert.ok(c.includes('xnet-mobile-data'), c.join(','));
+  // A town only one Wi-Fi device reports is never named; one two devices agree on can be.
+  t.room.signals[t.ids.Cid] = ny('Babylon', [40.7, -73.3], 'wifi');
+  t.room.signals[t.ids.Bob] = ny('Queens', [40.7, -73.8], 'wifi');
+  for (let i = 0; i < 20; i++) {
+    const q = dynamicCandidates(t.room, g, ids, t.ctx).find((x) => x.id === 'xplace-city');
+    if (q) assert.ok(q.text.includes('Brooklyn') && [t.ids.Host, t.ids.Ann].includes(q.bind.p1), q.text);
+  }
+  assert.ok(!cands().includes('xplace-odd-region'));
+});
+
 test('questions other players already played elsewhere are avoided', () => {
   const t = setup();
   const pool = E.questionPool(t.room);
