@@ -3,7 +3,7 @@
 // What you did get stays with you for the rest of the room's games, with markers
 // showing when you were in a waiting room and when you were away.
 
-import { html, useState, useEffect, useRef } from '../vendor/preact-htm.js';
+import { html, useState, useEffect, useLayoutEffect, useRef } from '../vendor/preact-htm.js';
 import { Avatar, cx, playerMap, colorOf } from './common.js';
 import { local, KEYS } from '../storage.js';
 import { sfx, buzz } from './audio.js';
@@ -29,9 +29,17 @@ export function WaitChat({ ctrl, view, scope, label = 'Waiting room' }) {
   const [text, setText] = useState('');
   const [picker, setPicker] = useState(null); // mid with open reaction bar
   const [more, setMore] = useState(false);
-  const [open, setOpen] = useState(true);
+  const [open, setOpenState] = useState(() => local.get(KEYS.chat + '.open', true));
+  const setOpen = (v) => {
+    setOpenState(v);
+    local.set(KEYS.chat + '.open', v);
+  };
+  // Everything up to this time has been seen (the chat was open on screen).
+  const [readAt, setReadAt] = useState(() => local.get(key + '.read', 0));
+  const firstUnreadAt = useRef(readAt); // where the "new" line goes for this visit
   const listRef = useRef();
   const count = msgs.filter((m) => !m.sep).length;
+  const unread = msgs.filter((m) => !m.sep && m.from !== view.me && m.at > readAt).length;
   // Markers only where they separate actual messages: "you were away" + which waiting room this is.
   const shown = [];
   let pendingJoin = null;
@@ -104,10 +112,38 @@ export function WaitChat({ ctrl, view, scope, label = 'Waiting room' }) {
     };
   }, [scope]);
 
-  useEffect(() => {
+  // Opening: jump (no animation) straight to the first unread message, or the end.
+  const placed = useRef(false);
+  useLayoutEffect(() => {
     const el = listRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-  }, [msgs.length]);
+    if (!open) {
+      placed.current = false;
+      return;
+    }
+    if (!el) return;
+    if (!placed.current) {
+      placed.current = true;
+      const mark = el.querySelector('[data-unread]');
+      el.scrollTop = mark ? Math.max(0, mark.offsetTop - el.offsetTop - 8) : el.scrollHeight;
+      if (!mark) firstUnreadAt.current = Infinity; // caught up: messages arriving now need no "new" line
+    } else if (el.scrollHeight - el.scrollTop - el.clientHeight < 140 || (msgs[msgs.length - 1] || {}).from === me) {
+      // A new message while you're at the bottom (or your own): follow it.
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    }
+  }, [open, msgs.length]);
+
+  // While the chat is open, what's in it counts as read.
+  useEffect(() => {
+    if (!open) {
+      firstUnreadAt.current = readAt;
+      return;
+    }
+    const last = msgs.reduce((t, m) => (m.sep ? t : Math.max(t, m.at || 0)), 0);
+    if (last > readAt) {
+      setReadAt(last);
+      local.set(key + '.read', last);
+    }
+  }, [open, msgs.length]);
 
   const send = () => {
     const t = text.trim();
@@ -127,7 +163,7 @@ export function WaitChat({ ctrl, view, scope, label = 'Waiting room' }) {
 
   return html`<div class="card chat" data-testid="chat">
     <button class="chat-head" onClick=${() => { setOpen(!open); sfx('tap'); }}>
-      <span>💬 Waiting-room chat</span><span class="muted small">${open ? 'hide' : `show${count ? ` (${count})` : ''}`}</span>
+      <span>💬 Waiting-room chat</span><span class=${cx('muted small', !open && unread && 'chat-unread')} data-testid="chat-toggle">${open ? 'hide' : unread ? `show (${unread} new)` : 'show'}</span>
     </button>
     ${open &&
     html`
@@ -139,8 +175,11 @@ export function WaitChat({ ctrl, view, scope, label = 'Waiting room' }) {
           if (m.sep === 'leave') return html`<div key=${m.mid} class="chat-sep away">🚪 You were away — anything said meanwhile isn't shown</div>`;
           const p = who(m.from);
           const mine = m.from === me;
+          const isFirstNew = !mine && m.at > firstUnreadAt.current && m === shown.find((x) => !x.sep && x.from !== me && x.at > firstUnreadAt.current);
+          const newLine = isFirstNew && shown.some((x) => !x.sep && x.at <= firstUnreadAt.current)
+            ? html`<div key=${'new' + m.mid} class="chat-sep new" data-unread>new messages</div>` : isFirstNew ? html`<span key=${'new' + m.mid} data-unread></span>` : null;
           const reactions = Object.entries(m.reactions || {});
-          return html`<div key=${m.mid} class=${cx('chat-msg', mine ? 'mine' : 'theirs')}>
+          return html`${newLine}<div key=${m.mid} class=${cx('chat-msg', mine ? 'mine' : 'theirs')}>
             ${!mine && html`<${Avatar} p=${p} size="xs" />`}
             <div class="chat-col">
               ${!mine && html`<span class="chat-name" style=${`color:${colorOf(p.color)}`}>${p.name}</span>`}

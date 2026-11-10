@@ -413,8 +413,7 @@ body[data-mood='5'] .vignette { animation: breathe 5s ease-in-out infinite; }
 .result .ans { font-family: var(--script); font-size: 29px; line-height: 1.1; padding-right: 64px; word-wrap: break-word; }
 .result .author { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
 /* results reveal in place: the card's space is reserved, parts appear stage by stage */
-.result.pending { opacity: 0.35; border-style: dashed; box-shadow: none; animation: none; }
-.result.pending *, .result.s0 .author, .result.s0 .author *, .result.s0 .voters, .result.s0 .voters *, .result.s0 .pts, .result.s0 .forfeit,
+.result.s0 .author, .result.s0 .author *, .result.s0 .voters, .result.s0 .voters *, .result.s0 .pts, .result.s0 .forfeit,
 .result.s1 .voters, .result.s1 .voters *, .result.s1 .pts, .result.s1 .forfeit { visibility: hidden; animation: none !important; }
 .result.s1 .author, .result.s2 .author { animation: stamp 0.55s var(--bounce) both; }
 .result.s2 .author { animation: none; }
@@ -645,6 +644,8 @@ body.spotlight .spotlight-layer { opacity: 1; }
 .chat-rule { margin: 0 0 6px; font-size: 14px; color: var(--ink-soft); }
 .chat-sep { align-self: center; text-align: center; font-size: 13px; color: var(--ink-soft); padding: 2px 10px; border-radius: 10px; background: rgba(45, 42, 74, 0.06); }
 .chat-sep.away { background: rgba(255, 123, 107, 0.12); }
+.chat-sep.new { color: var(--coral, #ff7b6b); font-weight: 700; background: none; }
+.chat-unread { color: var(--grape); font-weight: 700; }
 .podium .step.tied { max-width: 240px; flex: 1.4; }
 .podium-people { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
 .podium .step.tied .nm { white-space: normal; text-align: center; font-size: 15px; }

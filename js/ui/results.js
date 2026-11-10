@@ -10,13 +10,21 @@ import { WaitChat } from './chat.js';
 // Round results: answers revealed one by one, least popular first.
 
 /**
- * One answer card. Every part is laid out from the start (just invisible until its turn),
- * so the page never changes height while the results come in — scrolling stays put.
+ * One answer card, added when its turn comes. Inside the card every part is laid out from
+ * the start (just invisible until its turn), so the card itself never jumps.
  */
-function ResultEntry({ e, stage, who, view, top, index, hidden }) {
+function ResultEntry({ e, stage, who, view, top, index }) {
   const author = who(e.pid);
   const judge = e.votes.filter((v) => v.pts === 2);
-  return html`<div class=${cx('result', hidden && 'pending', `s${stage}`, top && stage >= 2 && 'top')} style=${`background-image:${stage >= 1 ? wash(author.color, index + 30, { strength: 0.55 }) : 'none'}`} data-testid=${hidden ? 'result-pending' : 'result'} aria-hidden=${hidden ? 'true' : null}>
+  const ref = useRef();
+  // A new card below the fold slides into view (unless you just scrolled up to look at something).
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || stage >= 2 || Date.now() - lastUserScroll < 2500) return;
+    const b = el.getBoundingClientRect();
+    if (b.bottom > innerHeight - 20) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [stage === 0]);
+  return html`<div ref=${ref} class=${cx('result', `s${stage}`, top && stage >= 2 && 'top')} style=${`background-image:${stage >= 1 ? wash(author.color, index + 30, { strength: 0.55 }) : 'none'}`} data-testid="result">
     <div class="ans">“${e.text}”</div>
     <div class="author">
       <${Avatar} p=${author} size="sm" />
@@ -33,6 +41,9 @@ function ResultEntry({ e, stage, who, view, top, index, hidden }) {
     <div class=${cx('pts', e.points === 0 && 'zero')}>${e.points ? `+${e.points}` : '0'}</div>
   </div>`;
 }
+
+let lastUserScroll = 0;
+for (const ev of ['wheel', 'touchmove', 'keydown']) addEventListener(ev, () => (lastUserScroll = Date.now()), { passive: true });
 
 /** Animated number: counts from `from` to `to` once `run` turns true. */
 function CountUp({ from, to, run, delay = 0 }) {
@@ -191,7 +202,7 @@ export function ResultsPhase({ ctrl, view }) {
     <div class="center"><h1 style="font-size:32px">The results are in!</h1></div>
     <div class="card flat" style="padding:12px 16px;text-align:center"><${QuestionText} segments=${g.q.segments} who=${who} animate=${false} compact /></div>
     <div class="result-list">
-      ${r.entries.map((e, i) => html`<${ResultEntry} key=${e.oid} e=${e} index=${i} hidden=${stageOf(i) === 0} stage=${Math.max(0, stageOf(i) - 1)} who=${who} view=${view} top=${e.points === maxPts && maxPts > 0} />`)}
+      ${r.entries.map((e, i) => stageOf(i) > 0 && html`<${ResultEntry} key=${e.oid} e=${e} index=${i} stage=${stageOf(i) - 1} who=${who} view=${view} top=${e.points === maxPts && maxPts > 0} />`)}
     </div>
     ${!done && visible.length < r.entries.length + 1 && html`<div class="center"><button class="link-btn" onClick=${() => { sfx('tap'); setSkip(true); markSeen(key); }}>skip ⏩</button></div>`}
     ${done &&

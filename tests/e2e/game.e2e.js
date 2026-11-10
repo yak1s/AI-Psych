@@ -285,6 +285,15 @@ test('waiting-room chat only reaches people who are waiting, with reactions; vot
   await press(bob.locator('.react-bar button', { hasText: '😂' }));
   await ann.locator('.chat-react', { hasText: '😂' }).waitFor({ timeout: 10000 });
 
+  // Bob hides the chat: the button counts only what's new for him.
+  await tap(bob, 'chat-toggle');
+  await ann.getByTestId('chat-input').fill('psst bob');
+  await tap(ann, 'chat-send');
+  await until(async () => (await bob.getByTestId('chat-toggle').textContent()) === 'show (1 new)', 10000);
+  await tap(bob, 'chat-toggle');
+  await bob.locator('[data-unread]').waitFor({ timeout: 5000 });
+  assert.equal(await bob.getByTestId('chat-toggle').textContent(), 'hide');
+
   // Bob goes back to edit: he misses what's said meanwhile, even after coming back.
   await press(bob.getByText('change it'));
   await bob.getByTestId('answer-input').waitFor();
