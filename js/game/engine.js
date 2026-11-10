@@ -212,7 +212,9 @@ function eligibleStarter(activeIds) {
 
 export function questionPool(room, activeIds = activePlayers(room).map((p) => p.id)) {
   const used = new Set(room.used);
-  const deck = eligibleDeck(room, activeIds).filter((q) => !used.has(q.id));
+  // The exact same question (e.g. an edited deck uploaded again) is never asked twice in one room.
+  const usedText = new Set(room.usedText || []);
+  const deck = eligibleDeck(room, activeIds).filter((q) => !used.has(q.id) && !(q.tid && usedText.has(q.tid)));
   const useStarter = !room.deck || room.settings.fillStarter;
   const starter = useStarter ? eligibleStarter(activeIds).filter((q) => !used.has(q.id)) : [];
   const primary = room.deck ? deck : starter;
@@ -265,7 +267,8 @@ function chooseQuestion(room, g, activeIds, ctx) {
   // Clue questions these players already got in other games (on any device) are skipped.
   const dyn = room.settings.clues !== false ? dynamicCandidates(room, g, activeIds, ctx).filter((d) => seenScore(room, d.id, activeIds) === 0 || !list.length) : [];
   if (dyn.length && wantDynamic(room, g, list.length, dyn, pool.primary.length > 0)) {
-    const usable = dyn.filter((d) => d.level === target); // keeps the slow climb in creepiness
+    // keeps the slow climb in creepiness; after a question about several people, prefer one about one
+    const usable = dyn.filter((d) => d.level === target).map((d) => (g.lastMulti && Object.keys(d.bind).length > 1 ? { ...d, weightPenalty: d.weightPenalty + 2 } : d));
     if (usable.length) {
       const best = Math.min(...usable.map((d) => rank(d.level) + seenScore(room, d.id, activeIds) * 3 + d.weightPenalty));
       return { dynamic: pick(usable.filter((d) => rank(d.level) + seenScore(room, d.id, activeIds) * 3 + d.weightPenalty === best)) };
@@ -277,7 +280,9 @@ function chooseQuestion(room, g, activeIds, ctx) {
   // Prefer questions fewer of these players have already seen (on any device, in any room).
   const scored = list.filter((q) => q.level === level).map((q) => {
     const m = mapQuestion(room, g, q, activeIds);
-    return { q, m, s: m.score + seenScore(room, q.id, activeIds) * 40 };
+    // Two questions about several people in a row is a lot: prefer a break in between (not strict).
+    const multi = g.lastMulti && q.refs.length + q.wild.length > 1 ? 30 : 0;
+    return { q, m, s: m.score + seenScore(room, q.id, activeIds) * 40 + multi };
   });
   const min = Math.min(...scored.map((x) => x.s));
   return pick(scored.filter((x) => x.s === min));
@@ -375,6 +380,7 @@ function beginQuestion(room, ctx) {
     kind = q.id[0] === 's' ? 'generic' : 'deck';
   }
   room.used.push(q.id);
+  if (q.tid) room.usedText = [...(room.usedText || []), q.tid].slice(-2000);
   markSeen(room, q.id, activeIds);
   const byId = Object.fromEntries(room.players.map((p) => [p.id, p]));
   const segments = renderSegments(q.text, m, byId);
@@ -383,6 +389,7 @@ function beginQuestion(room, ctx) {
   if (kind === 'deck' && about.some((pid) => !Object.values(room.assign).includes(pid))) kind = 'improv';
   for (const pid of about) g.featured[pid] = (g.featured[pid] || 0) + 1;
   g.lastAbout = about;
+  g.lastMulti = about.length > 1;
   g.lastLevel = q.level;
   let answerers = room.settings.subjectAnswers ? activeIds : activeIds.filter((p) => !about.includes(p));
   if (!answerers.length) answerers = activeIds;

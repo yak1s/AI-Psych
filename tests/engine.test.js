@@ -574,6 +574,33 @@ test('late joiners get asked about a couple of questions later; performance ques
   }
 });
 
+test('two different decks never share question codes; the same deck keeps its codes', () => {
+  const a = parseDeck('{"questions":[{"level":1,"text":"What is {Sam}\'s secret talent?"},{"level":2,"text":"Where does {Sam} go?"}]}', 'a.json').deck;
+  const a2 = parseDeck('{"questions":[{"level":2,"text":"Where does {Sam} go?"},{"level":1,"text":"What is {Sam}\'s secret talent?"}]}', 'a.json').deck;
+  const b = parseDeck('{"questions":[{"level":1,"text":"What is {Sam}\'s secret talent?"},{"level":3,"text":"Who is {Sam} texting?"}]}', 'b.json').deck;
+  const id = (d, t) => d.questions.find((q) => q.text.includes(t)).id;
+  assert.equal(id(a, 'talent'), id(a2, 'talent'), 'same deck, same codes');
+  assert.notEqual(id(a, 'talent'), id(b, 'talent'), 'another deck asks it fresh');
+  assert.equal(a.questions[0].tid, b.questions[0].tid);
+});
+
+test('questions about several people are spread out', () => {
+  let backToBack = 0;
+  for (let run = 0; run < 5; run++) {
+    const t = setup(['Host', 'Ann', 'Bob', 'Cid', 'Dee', 'Eve']);
+    t.room.settings.rounds = 15;
+    t.act('Host', { type: 'start' });
+    let prev = false;
+    for (let i = 0; i < 14; i++) {
+      const multi = t.room.game.q.about.length > 1;
+      if (multi && prev) backToBack++;
+      prev = multi;
+      t.act('Host', { type: 'skipQuestion' });
+    }
+  }
+  assert.ok(backToBack <= 3, 'back to back ' + backToBack);
+});
+
 test('questions other players already played elsewhere are avoided', () => {
   const t = setup();
   const pool = E.questionPool(t.room);

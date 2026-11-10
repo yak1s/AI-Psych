@@ -632,7 +632,6 @@ body.spotlight .spotlight-layer { opacity: 1; }
 .btn.nudging { animation: shake 0.5s ease 2, pulse-btn 1.2s ease-in-out 1s infinite; }
 
 /* ------------------------------------------------------------------ v5 additions */
-.q-code { font-family: var(--body); font-size: 13px; color: var(--ink-soft); letter-spacing: 1px; }
 .vote-rule { margin: 0; text-align: center; font-size: 17px; padding: 6px 10px; border: 2px dashed var(--ink-faint); border-radius: var(--wobble-2); }
 .forfeit { margin-top: 8px; font-size: 16px; color: #8a3b12; background: rgba(255, 157, 66, 0.18); border-radius: 10px; padding: 4px 8px; }
 .greet-banner {

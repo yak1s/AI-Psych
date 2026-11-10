@@ -248,6 +248,13 @@ export function parseDeck(text, fileName = 'deck') {
     errors.push('No questions found. Check the format in the README (or download the template).');
     return { ok: false, errors, warnings };
   }
+  // Each deck gets its own question codes (two decks that happen to share a question don't block
+  // each other); the same file uploaded again keeps its codes, so played questions stay played.
+  const deckKey = hash(questions.map((q) => q.id).sort().join(','));
+  for (const q of questions) {
+    q.tid = q.id; // same text = same tid (an edited deck re-uploaded in the same room)
+    q.id = 'd' + hash(deckKey + '|' + q.id);
+  }
   const counts = {};
   for (const q of questions) counts[q.level] = (counts[q.level] || 0) + 1;
   return {

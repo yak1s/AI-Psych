@@ -60,12 +60,23 @@ function top(ids, fn, { min = -Infinity, unique = true, low = false } = {}) {
   return { pid: rows[0][0], value: rows[0][1], runnerUp: rows[1] ? rows[1][1] : null };
 }
 
-/**
- * Location from the internet connection is only trusted on Wi-Fi/wired with a city
- * (phone carriers often place people in the wrong town). */
+/** Has a location from the internet connection (city level, usually right). */
 function ipOk(d, p) {
   const s = d.sig(p);
-  return !!(s.precise && s.city && s.ll && s.conn !== 'cellular');
+  return !!(s.precise && s.city && s.ll);
+}
+
+/**
+ * The town is believable: nobody else is close by (under 80 km) in a *different* town — that's a
+ * big metro area where the internet lookup easily picks the wrong suburb (Babylon vs Brooklyn).
+ * Mobile data is a bit vaguer still, so it needs a second device to agree.
+ */
+function townOk(d, p) {
+  const s = d.sig(p);
+  if (!ipOk(d, p)) return false;
+  const near = d.ids.filter((q) => q !== p && ipOk(d, q) && km(d.sig(q).ll, s.ll) < 80);
+  if (near.some((q) => d.sig(q).city !== s.city)) return false;
+  return s.conn !== 'cellular' || near.some((q) => d.sig(q).city === s.city);
 }
 
 /** Everyone's connection type is known, and exactly one person is on mobile data. */
@@ -183,7 +194,7 @@ const T = [
     id: 'place-odd-region', cat: 'place', level: 3,
     text: ['Everybody else is around [others]. {p1} is the only one near [place]. Who or what is {p1} with right now?'],
     when(d) {
-      // Only with trustworthy locations for everyone, and really far from all the others.
+      // Only with internet locations for everyone, and really far from all the others.
       if (!d.ids.every((p) => ipOk(d, p))) return null;
       const o = oddOneOut(d.ids, (p) => d.sig(p).area);
       if (!o || d.sig(o.pid).country !== d.sig(o.othersIds[0]).country) return null; // same country, different area
@@ -215,7 +226,7 @@ const T = [
     when(d) {
       if (!d.ids.every((p) => ipOk(d, p))) return null;
       const p = onlyPair(d.ids, (x) => d.sig(x).city || null);
-      if (!p) return null;
+      if (!p || !p.pids.every((x) => townOk(d, x))) return null;
       if (d.ids.some((x) => !p.pids.includes(x) && km(d.sig(x).ll, d.sig(p.pids[0]).ll) < 100)) return null; // the others are just next door
       return { bind: { p1: p.pids[0], p2: p.pids[1] }, vars: { place: p.value } };
     },
@@ -232,11 +243,8 @@ const T = [
     id: 'place-city', cat: 'place', level: 5,
     text: ["The app knows {p1} is near [city]. What's the place there {p1} goes to that nobody in this game knows about?"],
     when(d) {
-      // A city is only named when another trusted device places someone in the same city too,
-      // and nobody else's location argues with it.
-      const ok = d.ids.filter((p) => ipOk(d, p));
-      const ids = ok.filter((p) => ok.some((q) => q !== p && d.sig(q).city === d.sig(p).city));
-      if (ids.length < 2 || ok.length < d.ids.length - 1) return null;
+      const ids = d.ids.filter((p) => townOk(d, p));
+      if (!ids.length || d.ids.filter((p) => ipOk(d, p)).length < 2) return null;
       const pid = ids[Math.floor(random() * ids.length)];
       return { bind: { p1: pid }, vars: { city: d.sig(pid).city } };
     },

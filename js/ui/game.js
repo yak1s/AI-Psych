@@ -5,7 +5,7 @@ import { ANSWER_MAX } from '../game/engine.js';
 import { seen, markSeen, session } from '../storage.js';
 import { sfx, buzz, haptic } from './audio.js';
 import { WaitChat } from './chat.js';
-import { seeded, hash } from '../game/util.js';
+import { seeded } from '../game/util.js';
 import { AI_LINES, GENERIC_LINES, IMPROV_LINES, OUT_OF_FILE_LINES, CLUE_LINES, WRITE_QUIPS, WRITE_CREEPY, VOTE_QUIPS, VOTE_CREEPY, pickLines } from './lines.js';
 import { PlayersPanel } from './people.js';
 
@@ -84,17 +84,10 @@ export function QuestionCard({ view, animate = true, compact }) {
     <div class="tape"></div>
     <div class="q-meta">
       <span class="q-num">Q ${g.idx + 1}/${g.n}</span>
-      ${g.q.id && html`<span class="q-code" title="Question code">${questionCode(g.q.id)}</span>`}
     </div>
     <${QuestionText} segments=${g.q.segments} who=${who} animate=${animate} compact=${compact} />
     ${aboutMe && !compact && html`<div class="about-you">👀 This one's about YOU — your vote counts double!</div>`}
   </div>`;
-}
-
-/** A short code for every question: B = built in, D = from the deck, N = built from what the app noticed. */
-export function questionCode(id) {
-  const kind = { s: 'B', d: 'D', x: 'N' }[id[0]] || 'Q';
-  return `#${kind}-${(id[0] === 'x' ? hash(id) : id.slice(1)).slice(0, 5).toUpperCase()}`;
 }
 
 function timerEnd(view) {
