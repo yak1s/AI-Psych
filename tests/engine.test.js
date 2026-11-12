@@ -627,6 +627,26 @@ test('must-ask deck questions are always asked, spread over the game; text/CSV/J
   assert.equal(json.mustCount, 2);
 });
 
+test('must-ask questions wait for their level, so the creepiness still climbs (template deck, 5 rounds)', () => {
+  for (let r = 0; r < 150; r++) {
+    const t = setup(['Sarah', 'Mommy', 'Daddy']);
+    assert.ok(t.act('Sarah', { type: 'deck', deck: parseDeck(JSON.stringify(TEMPLATE_DECK), 't.json').deck }).ok);
+    E.autoAssign(t.room);
+    t.room.settings.rounds = 5;
+    t.act('Sarah', { type: 'start' });
+    const levels = [];
+    let must = 0;
+    for (let i = 0; i < 5; i++) {
+      levels.push(t.room.game.q.level);
+      if (t.room.deck.questions.some((q) => q.id === t.room.game.q.id && q.must)) must++;
+      playRound(t);
+      t.act('Sarah', { type: 'next' });
+    }
+    assert.deepEqual(levels, [1, 2, 3, 4, 5]);
+    assert.equal(must, 2, 'both must-ask questions asked');
+  }
+});
+
 test('extra personal climbs the creepiness levels faster', () => {
   const levelsOf = (more) => {
     const t = setup();

@@ -269,11 +269,27 @@ function chooseQuestion(room, g, activeIds, ctx) {
   const mustNeed = (g.mustTarget || 0) - (g.mustDone || 0);
   if (mustNeed > 0) {
     const must = pool.deck.filter((q) => q.must);
+    const exact = must.filter((q) => q.level === target);
     const fit = must.filter((q) => q.level <= target);
     const left = g.n - g.idx;
-    if (must.length && mustNeed >= left) list = must;
-    else if (fit.length && random() < Math.min(1, (mustNeed / left) * 1.6)) list = fit;
-    if (list === must || list === fit) return pickFrom(room, g, list, activeIds, rank);
+    // Rounds still to come at each must-ask question's level: if there's one left later, wait for it
+    // (so the creepiness keeps climbing); otherwise ask it now.
+    const laterAt = (lvl) => {
+      let k = 0;
+      for (let i = g.idx + 1; i < g.n; i++) {
+        const st = room.settings.moreClues ? Math.min(g.n - 1, Math.round(i * 1.6)) : i;
+        if (targetLevel(g.levels, st, g.n) === lvl) k++;
+      }
+      return k;
+    };
+    let pickList = null;
+    if (exact.length) pickList = exact; // its level is up now: the natural moment
+    else if (must.length && mustNeed >= left) pickList = must; // last chance
+    else {
+      const overdue = fit.filter((q) => laterAt(q.level) === 0); // its level has passed and won't come back
+      if (overdue.length && random() < Math.min(1, (mustNeed / left) * 1.6)) pickList = overdue;
+    }
+    if (pickList) return pickFrom(room, g, pickList, activeIds, rank);
   }
 
   // Sometimes the AI uses what it has noticed about the players instead (see dynamic.js).
