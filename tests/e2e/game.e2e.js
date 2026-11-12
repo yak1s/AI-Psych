@@ -385,6 +385,31 @@ test('a deck too small for the game: the host is told before it starts and can a
   for (const p of [host, ...others]) await p.context().close();
 });
 
+test('a player switches to another app: others see it, and coming back offers "stay connected"', { timeout: 120000 }, async () => {
+  const { host, code } = await hostRoom(world, 'Hosty', { width: 1100, height: 900 });
+  const ann = await joinRoom(world, code, 'Ann', { mobile: true });
+  const bob = await joinRoom(world, code, 'Bob');
+  await tap(host, 'start-game');
+  await ann.getByTestId('answer-input').waitFor({ timeout: 20000 });
+  const setHidden = (page, hidden) =>
+    page.evaluate((h) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (h ? 'hidden' : 'visible') });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }, hidden);
+  await setHidden(ann, true);
+  await until(() => state(host, (c) => c.view.players.find((p) => p.name === 'Ann').away), 10000);
+  await bob.getByTestId('answer-input').fill('bob was here');
+  await tap(bob, 'submit-answer');
+  await bob.getByText('in another app…').waitFor({ timeout: 10000 }); // Bob's waiting list
+  await sleep(15500);
+  await setHidden(ann, false);
+  await until(() => state(host, (c) => !c.view.players.find((p) => p.name === 'Ann').away), 10000);
+  await ann.getByTestId('come-back-tip').waitFor({ timeout: 5000 });
+  await tap(ann, 'tip-keepalive');
+  assert.equal(await ann.evaluate(() => localStorage.getItem('aipsych.keepAlive')), 'true');
+  for (const p of [host, ann, bob]) await p.context().close();
+});
+
 test('lost your phone? Join with the same name on another device and get your seat back', { timeout: 120000 }, async () => {
   const { host, code } = await hostRoom(world);
   const ann = await joinRoom(world, code, 'Ann');

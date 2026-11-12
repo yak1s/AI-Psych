@@ -1,5 +1,6 @@
 {
   "title": "Family Night",
+  "mustAsk": "all",
   "players": [
     "Mom",
     "Dad",
@@ -9,7 +10,8 @@
   "questions": [
     {
       "level": 1,
-      "text": "What is {Mom}'s secret talent that nobody knows about?"
+      "text": "What is {Mom}'s secret talent that nobody knows about?",
+      "must": true
     },
     {
       "level": 1,
@@ -33,7 +35,8 @@
     },
     {
       "level": 4,
-      "text": "Why was {Dad} awake at 3am last Tuesday?"
+      "text": "Why was {Dad} awake at 3am last Tuesday?",
+      "must": true
     },
     {
       "level": 4,

@@ -2,7 +2,7 @@
 // ready-made prompt into ChatGPT / Gemini / Claude, and pastes the answer back.
 
 import { html, useState } from '../vendor/preact-htm.js';
-import { Btn, Modal } from './common.js';
+import { Btn, Modal, AutoText } from './common.js';
 import { sfx } from './audio.js';
 import { local } from '../storage.js';
 
@@ -37,6 +37,7 @@ export function buildPrompt(f) {
     L.push(`- Players:`);
     for (const p of people) L.push(`  - ${p.name.trim()}${p.about.trim() ? ` — ${p.about.trim()}` : ' — (no details given)'}`);
   } else L.push(`- Players: not listed. Use {any} and {any2} instead of names in every question.`);
+  if ((f.must || '').trim()) L.push(`- Must ask about (the host wants these for sure): ${f.must.trim()}`);
   if (f.avoid.trim()) L.push(`- Off limits (never mention or hint at): ${f.avoid.trim()}`);
   if (!f.occasion.trim() && !f.group.trim() && !people.some((p) => p.about.trim()))
     L.push(`- No other details were given: write sharp, specific-sounding questions anyway, implying the AI has noticed things.`);
@@ -87,6 +88,7 @@ export function buildPrompt(f) {
         players: names.length ? names : [],
         questions: [
           { level: 1, text: `What would {${n1}} …?` },
+          ...((f.must || '').trim() ? [{ level: 3, text: `What really happened with {${n1}} and …?`, must: true }] : []),
           { level: 5, text: `What did {any} and {${n2 === 'any' ? 'any2' : n2}} …?` },
         ],
       },
@@ -95,6 +97,9 @@ export function buildPrompt(f) {
     ),
     '```',
     `- Valid JSON: double quotes, no comments, no trailing commas. "level" is a number from 1 to 5. List the questions in order of level.`,
+    ...((f.must || '').trim()
+      ? [`- Must-ask: write at least one question for each "must ask about" topic and add "must": true to those questions (the game always asks them). Only those get "must": true.`]
+      : []),
     `- If everything doesn't fit in one reply, stop after a complete question and close the JSON properly; I'll ask you to continue.`,
     ``,
     `Before answering, check: at most ${f.count} questions (fewer is fine), about even across the levels, every {Name} spelled exactly as in "players", every question names someone, no near-duplicates, valid JSON.`,
@@ -110,7 +115,7 @@ export function AiDeckHelper({ view, deckNames = [], onClose, onPaste, onTemplat
   };
   const [f, setF] = useState(() => {
     const saved = local.get(SAVE_KEY);
-    const base = { title: '', occasion: '', group: '', avoid: '', language: 'English', count: 60, people: initialPeople() };
+    const base = { title: '', occasion: '', group: '', avoid: '', must: '', language: 'English', count: 60, people: initialPeople() };
     if (!saved) return base;
     // keep what was typed last time, add anyone new
     const people = [...saved.people];
@@ -161,27 +166,32 @@ export function AiDeckHelper({ view, deckNames = [], onClose, onPaste, onTemplat
   return html`<${Modal} big onClose=${onClose} title="✨ Make a deck with AI" head=${head} foot=${foot} testid="ai-modal">
     ${tab === 'write'
       ? html`<div class="stack ai-form" style="gap:10px" data-testid="ai-helper">
-          <p class="muted small" style="margin:0">Everything is optional — but every detail you add makes the questions funnier and creepier. Then copy the prompt into ChatGPT, Gemini or Claude.</p>
+          <p class="muted small" style="margin:0">Everything is optional — but <b>the more you write, the better the questions</b>. Real details (habits, stories, inside jokes, recent news) turn into the funniest and creepiest questions. Then copy the prompt into ChatGPT, Gemini or Claude.</p>
           <label>Deck title
             <input class="input" value=${f.title} placeholder="e.g. Grandma's 80th" onInput=${(e) => set({ title: e.currentTarget.value })} />
           </label>
           <label>What's the occasion? Where & when?
-            <input class="input" value=${f.occasion} placeholder="e.g. Saturday-night family dinner after Leo's graduation, in Lisbon" onInput=${(e) => set({ occasion: e.currentTarget.value })} />
+            <${AutoText} rows=${2} value=${f.occasion} placeholder="e.g. Saturday-night family dinner after Leo's graduation, in Lisbon. Grandma made her famous lasagna; the dog keeps stealing napkins." onInput=${(e) => set({ occasion: e.currentTarget.value })} />
           </label>
           <label>How is everyone connected?
-            <textarea class="input" rows="2" value=${f.group} placeholder="e.g. Three siblings, their spouses and the grandparents. Ana and Leo are twins." onInput=${(e) => set({ group: e.currentTarget.value })}></textarea>
+            <${AutoText} rows=${2} value=${f.group} placeholder="e.g. Three siblings, their spouses and the grandparents. Ana and Leo are twins who still fight over the front seat. Everyone is in a group chat Dad never reads." onInput=${(e) => set({ group: e.currentTarget.value })} />
           </label>
           <div class="stack" style="gap:6px">
-            <b>The players <span class="muted small">— a few words each: job, hobbies, quirks, where they live, recent news, inside jokes</span></b>
+            <b>The players <span class="muted small">— tell the AI as much as you can about each one: job, hobbies, quirks, where they live, recent news, funny stories, inside jokes, what they'd never admit</span></b>
             ${f.people.map((p, i) => html`<div key=${i} class="ai-person">
               <input class="input" value=${p.name} placeholder="Name" aria-label="Name" onInput=${(e) => setPerson(i, { name: e.currentTarget.value.replace(/[{}]/g, '') })} />
-              <input class="input" value=${p.about} placeholder="e.g. just moved to Florida, bakes at 2am, ignores group chats" aria-label=${`About ${p.name || 'this player'}`} onInput=${(e) => setPerson(i, { about: e.currentTarget.value })} />
               <button class="link-btn" aria-label="Remove" onClick=${() => set({ people: f.people.filter((_, j) => j !== i) })}>✕</button>
+              <${AutoText} rows=${4} max=${4} value=${p.about} aria-label=${`About ${p.name || 'this player'}`}
+                placeholder=${`e.g. Just moved to Florida and won't stop talking about the weather. Bakes at 2am. Ignores every group chat but reacts to memes within seconds. Secretly competitive at board games. Once got lost in IKEA for two hours.`}
+                onInput=${(e) => setPerson(i, { about: e.currentTarget.value })} />
             </div>`)}
             <button class="link-btn" style="align-self:flex-start" onClick=${() => set({ people: [...f.people, { name: '', about: '' }] })}>+ add a player</button>
           </div>
+          <label>Anything you must ask about? <span class="muted small" style="font-weight:400">— these questions are always asked</span>
+            <${AutoText} value=${f.must} placeholder="e.g. Leo's new job, the famous camping trip, who ate the last slice of cake" onInput=${(e) => set({ must: e.currentTarget.value })} />
+          </label>
           <label>Anything off limits?
-            <input class="input" value=${f.avoid} placeholder="e.g. no politics, don't mention the divorce" onInput=${(e) => set({ avoid: e.currentTarget.value })} />
+            <${AutoText} value=${f.avoid} placeholder="e.g. no politics, don't mention the divorce" onInput=${(e) => set({ avoid: e.currentTarget.value })} />
           </label>
           <div class="row" style="justify-content:space-between">
             <label class="row" style="gap:6px" title="The AI writes fewer if there isn't enough to say">Up to

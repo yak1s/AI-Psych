@@ -34,9 +34,9 @@ export function PlayerTiles({ view, onKick, showEmpty, onEditMe }) {
       ? html`<button class="avatar-edit" title="Change your face" aria-label="Change your face" onClick=${onEditMe} data-testid="edit-avatar">
           <${Avatar} p=${p} size="lg" bob delay=${i * 0.3} /><span class="edit-pencil">✏️</span>
         </button>`
-      : html`<${Avatar} p=${p} size="lg" bob off=${!p.online} delay=${i * 0.3} badge=${!p.online ? '📡' : null} />`}
+      : html`<${Avatar} p=${p} size="lg" bob off=${!p.online} delay=${i * 0.3} badge=${p.away ? '📱' : !p.online ? '📡' : null} />`}
     <div class="name">${p.name}</div>
-    <div class="tag">${p.isHost ? 'host' : p.id === view.me ? 'you!' : !p.online ? 'reconnecting…' : ''}</div>
+    <div class="tag">${p.isHost ? 'host' : p.id === view.me ? 'you!' : p.away ? 'in another app' : !p.online ? 'reconnecting…' : ''}</div>
     ${onKick && p.online && p.net === 'relay' && html`<span class="net-tag" title="Connected through the backup relay (direct connection blocked on this network)">relay</span>`}
     ${onKick && !p.isHost && html`<button class="kick" title=${`Remove ${p.name}`} onClick=${() => onKick(p)}>${Doodle.cross({ size: 16, sw: 4 })}</button>`}
   </div>`);
@@ -155,8 +155,10 @@ export function Settings({ ctrl, info, title = 'Game settings' }) {
     <${Toggle} checked=${s.clues !== false} onChange=${(v) => set({ clues: v })} label="Let the app use what it notices (time zones, phones, how people play…) 👀" />
     ${s.clues !== false &&
     html`<${Toggle} checked=${!!s.moreClues} onChange=${(v) => set({ moreClues: v })} testid="more-clues"
-      label="Extra personal: more questions about you, fewer generic ones"
-      hint="Leans on what the app has noticed about the players — with or without a deck. Starts once it has noticed enough." />`}
+      label="Extra personal: more about you, and creepier sooner"
+      hint=${info.deck
+        ? 'Climbs the creepiness levels faster, and mixes in the most striking things the app noticed (late arrivals, terrible connections, extreme ways of playing). Your deck still comes first.'
+        : 'Climbs the creepiness levels faster, and asks more questions from what the app has noticed instead of generic ones (once it has noticed enough).'} />`}
     ${info.deck && html`<${Toggle} checked=${s.fillStarter} onChange=${(v) => set({ fillStarter: v })} label="Top up with built-in questions if the deck runs out" testid="fill-starter" />`}
   </div>`;
 }
@@ -176,6 +178,11 @@ function DeckPanel({ ctrl, view, info }) {
   const fileRef = useRef();
   const [ai, setAi] = useState(false);
   const deck = info.deck;
+  const [open, setOpenState] = useState(() => local.get('aipsych.deckOpen', false));
+  const setOpen = (v) => {
+    setOpenState(v);
+    local.set('aipsych.deckOpen', v);
+  };
 
   const loadText = (text, name) => {
     const res = parseDeck(text, name);
@@ -189,6 +196,7 @@ function DeckPanel({ ctrl, view, info }) {
       sfx('magic');
       setWarnings(res.warnings);
       setAi(false);
+      setOpen(true); // time to match the deck's names to the players
     }
   };
   const load = async (file) => {
@@ -196,9 +204,18 @@ function DeckPanel({ ctrl, view, info }) {
   };
 
   const builtinTotal = info.builtin ? info.builtin.total : 0; // always the full collection, not what this device already played
+  const summary = deck
+    ? `“${deck.title}” · ${deck.total} questions${deck.must ? ` · ${deck.must} must-ask` : ''}`
+    : 'optional — questions written about your group';
   return html`<div class="card stack" style="gap:10px" data-testid="deck-panel">
-    <div class="card-title" style="margin:0">🤫 Secret question deck <span class="muted small">(optional)</span></div>
-    ${!deck &&
+    <button class="card-title collapse-head" style="margin:0" aria-expanded=${open} onClick=${() => { sfx('tap'); setOpen(!open); }} data-testid="deck-toggle">
+      <span>🤫 Secret deck</span>
+      <span class="muted small collapse-sum">${open ? '' : summary}</span>
+      <span class="collapse-arrow">${open ? '▲' : '▼'}</span>
+    </button>
+    <input ref=${fileRef} type="file" accept=".json,.txt,.csv,.tsv,application/json,text/plain,text/csv"
+      style="display:none" data-testid="deck-input" onChange=${(e) => { load(e.currentTarget.files[0]); e.currentTarget.value = ''; }} />
+    ${open && !deck &&
     html`<p style="margin:0">The secret ingredient: questions written about <b>the people who are coming</b> — their names, habits and inside jokes. The app asks them as if it simply knew. Nobody else has to find out you prepared them. 😉</p>
       <div class="deck-options">
         <div class="deck-option">
@@ -212,18 +229,16 @@ function DeckPanel({ ctrl, view, info }) {
           <${Btn} small color="sky" sound="tap" onClick=${downloadTemplate} testid="template-btn">Download the template<//>
         </div>
       </div>
-      <label class=${cx('deck-drop', over && 'over')}
+      <label class=${cx('deck-drop', over && 'over')} onClick=${(e) => { e.preventDefault(); fileRef.current && fileRef.current.click(); }}
         onDragOver=${(e) => { e.preventDefault(); setOver(true); }}
         onDragLeave=${() => setOver(false)}
         onDrop=${(e) => { e.preventDefault(); setOver(false); load(e.dataTransfer.files[0]); }}>
         ${Doodle.upload({ size: 32 })}
         <b style="font-family:var(--display)">Upload a deck</b>
         <span class="muted small">.json, .txt or .csv — from the AI, the template, or one you already have</span>
-        <input ref=${fileRef} type="file" accept=".json,.txt,.csv,.tsv,application/json,text/plain,text/csv"
-          style="display:none" data-testid="deck-input" onChange=${(e) => { load(e.currentTarget.files[0]); e.currentTarget.value = ''; }} />
       </label>
       <p class="muted small" style="margin:0">No deck? No problem: the app uses its ${builtinTotal} built-in questions — plus whatever it notices about you.</p>`}
-        ${deck &&
+        ${open && deck &&
         html`<div class="stack" style="gap:8px">
             <div class="row" style="justify-content:space-between">
               <div><b style="font-family:var(--display)">“${deck.title}”</b><div class="muted small">${deck.total} questions · ${deck.fileName}</div></div>
@@ -236,6 +251,7 @@ function DeckPanel({ ctrl, view, info }) {
                 return html`<div key=${l.n}><span>${n}</span><i style=${`height:${6 + (n / max) * 34}px;background-image:${brush(['mint', 'sky', 'sun', 'tangerine', 'coral'][l.n - 1], l.n)}`}></i><span>${l.emoji}</span></div>`;
               })}
             </div>
+            ${deck.must > 0 && html`<div class="muted small" data-testid="must-info">⭐ ${deck.must} must-ask question${deck.must === 1 ? '' : 's'} — ${deck.mustAsk === 'all' ? 'always asked (spread over the game)' : `${deck.mustAsk} of them in every game`}${deck.mustLeft < deck.must ? ` · ${deck.mustLeft} not played yet` : ''}.</div>`}
             ${warnings.length > 0 && html`<ul class="warn-list">${warnings.map((w, i) => html`<li key=${i}>${w}</li>`)}</ul>`}
             <div class="secret-hint">Who is who? Match the deck's names to the players who joined${view.players.length < 2 ? ' (as people join, obvious names match automatically)' : ''}:</div>
             ${deck.predicted.map((x) => html`<div class="assign-row" key=${x.key}>
@@ -249,8 +265,8 @@ function DeckPanel({ ctrl, view, info }) {
             <div class="muted small">Questions about people who aren't matched are skipped. Names in questions use what players typed when joining.</div>
           </div>`}
     ${ai && html`<${AiDeckHelper} view=${view} onClose=${() => setAi(false)} onPaste=${(text) => loadText(text, 'ai-deck.json')} onTemplate=${downloadTemplate} />`}
-    ${info.builtin && info.builtin.seen > 0 && html`<div class="muted small" data-testid="seen-info">Built-in questions: ${info.builtin.fresh} nobody here has played yet · ${info.builtin.seen} played before by someone here (those come last)</div>`}
-    ${info.usedCount > 0 && html`<div class="row" style="justify-content:space-between">
+    ${open && info.builtin && info.builtin.seen > 0 && html`<div class="muted small" data-testid="seen-info">Built-in questions: ${info.builtin.fresh} nobody here has played yet · ${info.builtin.seen} played before by someone here (those come last)</div>`}
+    ${open && info.usedCount > 0 && html`<div class="row" style="justify-content:space-between">
       <span class="muted small">${info.usedCount} question${info.usedCount === 1 ? '' : 's'} already played on this device — never repeated</span>
       <button class="link-btn" style="font-size:18px" onClick=${() => ctrl.dispatch({ type: 'resetUsed' })}>reset</button>
     </div>`}

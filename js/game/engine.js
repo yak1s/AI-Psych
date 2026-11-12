@@ -259,13 +259,27 @@ function chooseQuestion(room, g, activeIds, ctx) {
   let list = pool.primary.length ? pool.primary : pool.backup;
   // Later games skip the gentle warm-up level (as long as there is something else to ask).
   if (g.minLevel && list.some((q) => q.level >= g.minLevel)) list = list.filter((q) => q.level >= g.minLevel);
-  const target = targetLevel(g.levels, g.idx, g.n);
+  // "Extra personal" also climbs the creepiness levels faster (top level by about 60% of the game).
+  const step = room.settings.moreClues ? Math.min(g.n - 1, Math.round(g.idx * 1.6)) : g.idx;
+  const target = targetLevel(g.levels, step, g.n);
   const last = g.lastLevel || 0;
   const rank = (l) => (l === target ? 0 : l >= last && l < target ? target - l : l > target ? 10 + l - target : 20 + last - l);
 
+  // Must-ask deck questions: spread over the game, and certainly asked before it ends.
+  const mustNeed = (g.mustTarget || 0) - (g.mustDone || 0);
+  if (mustNeed > 0) {
+    const must = pool.deck.filter((q) => q.must);
+    const fit = must.filter((q) => q.level <= target);
+    const left = g.n - g.idx;
+    if (must.length && mustNeed >= left) list = must;
+    else if (fit.length && random() < Math.min(1, (mustNeed / left) * 1.6)) list = fit;
+    if (list === must || list === fit) return pickFrom(room, g, list, activeIds, rank);
+  }
+
   // Sometimes the AI uses what it has noticed about the players instead (see dynamic.js).
   // Clue questions these players already got in other games (on any device) are skipped.
-  const dyn = room.settings.clues !== false ? dynamicCandidates(room, g, activeIds, ctx).filter((d) => seenScore(room, d.id, activeIds) === 0 || !list.length) : [];
+  // Next to a custom deck, only the really striking ones.
+  const dyn = room.settings.clues !== false ? dynamicCandidates(room, g, activeIds, ctx, { strongOnly: !!room.deck }).filter((d) => seenScore(room, d.id, activeIds) === 0 || !list.length) : [];
   if (dyn.length && wantDynamic(room, g, list.length, dyn, pool.primary.length > 0)) {
     // keeps the slow climb in creepiness; after a question about several people, prefer one about one
     const usable = dyn.filter((d) => d.level === target).map((d) => (g.lastMulti && Object.keys(d.bind).length > 1 ? { ...d, weightPenalty: d.weightPenalty + 2 } : d));
@@ -275,6 +289,10 @@ function chooseQuestion(room, g, activeIds, ctx) {
     }
   }
   if (!list.length) return dyn.length ? { dynamic: pick(dyn) } : null;
+  return pickFrom(room, g, list, activeIds, rank);
+}
+
+function pickFrom(room, g, list, activeIds, rank) {
   const available = [...new Set(list.map((q) => q.level))];
   const level = available.sort((a, b) => rank(a) - rank(b))[0];
   // Prefer questions fewer of these players have already seen (on any device, in any room).
@@ -297,7 +315,7 @@ export const BOOST_MIN_CLUES = 5;
  */
 function wantDynamic(room, g, poolLeft, dyn, deckLeft) {
   const done = g.dynCount || 0;
-  const boost = room.settings.moreClues && new Set(dyn.map((d) => d.sim)).size >= BOOST_MIN_CLUES;
+  const boost = room.settings.moreClues && new Set(dyn.map((d) => d.sim)).size >= (room.deck ? 1 : BOOST_MIN_CLUES);
   // With a deck the custom deck questions come first; once the deck runs out, "extra personal"
   // prefers these over generic built-in questions.
   const deck = room.deck && deckLeft;
@@ -341,6 +359,11 @@ export function startGame(room, ctx) {
     history: [],
     startedAt: ctx.now,
   };
+  // Must-ask deck questions for this game: all of them (as many as fit), or the deck's number.
+  const mustLeft = pool.deck.filter((q) => q.must).length;
+  const mustAsk = room.deck && room.deck.mustAsk;
+  room.game.mustTarget = Math.min(mustLeft, room.game.n, Number.isFinite(mustAsk) ? mustAsk : Infinity);
+  room.game.mustDone = 0;
   beginQuestion(room, ctx);
   return { ok: true };
 }
@@ -378,6 +401,7 @@ function beginQuestion(room, ctx) {
   } else {
     ({ q, m } = choice);
     kind = q.id[0] === 's' ? 'generic' : 'deck';
+    if (q.must) g.mustDone = (g.mustDone || 0) + 1;
   }
   room.used.push(q.id);
   if (q.tid) room.usedText = [...(room.usedText || []), q.tid].slice(-2000);
@@ -932,9 +956,9 @@ export function seenAction(room, pid, id) {
 // ---------------------------------------------------------------------------
 // Views (what each device is allowed to see)
 
-function publicPlayer(p, ctx) {
+function publicPlayer(p, ctx, room) {
   const net = p.isHost ? 'host' : (ctx.transport && ctx.transport[p.id]) || undefined;
-  return { id: p.id, name: p.name, avatar: p.avatar, color: p.color, isHost: !!p.isHost, online: p.isHost || !ctx.online || ctx.online.has(p.id), net };
+  return { id: p.id, name: p.name, avatar: p.avatar, color: p.color, isHost: !!p.isHost, online: p.isHost || !ctx.online || ctx.online.has(p.id), net, away: !!(room.awayNow && room.awayNow[p.id]) };
 }
 
 export function viewFor(room, pid, ctx) {
@@ -948,7 +972,7 @@ export function viewFor(room, pid, ctx) {
     epoch: room.epoch || 0,
     greet: room.greet && ctx.now - room.greet.at < 15000 ? room.greet : null,
     handover: room.handover && ctx.now - room.handover.at < 20000 ? room.handover : null,
-    players: activePlayers(room).map((p) => publicPlayer(p, ctx)),
+    players: activePlayers(room).map((p) => publicPlayer(p, ctx, room)),
     settings: { rounds: room.settings.rounds, subjectAnswers: room.settings.subjectAnswers, timeLimit: room.settings.timeLimit || 'off' },
     gamesPlayed: room.gamesPlayed,
     hasDeck: !!room.deck,
@@ -1013,6 +1037,9 @@ export function hostInfo(room) {
       fileName: room.deck.fileName,
       total: room.deck.questions.length,
       counts: room.deck.counts,
+      must: room.deck.questions.filter((q) => q.must).length,
+      mustLeft: pool.deck.filter((q) => q.must).length,
+      mustAsk: room.deck.mustAsk || 'all',
       predicted: room.deck.predicted.map((x) => ({ ...x, pid: isActive(room, room.assign[x.key]) ? room.assign[x.key] : null, uses: refCount[x.key] || 0 })),
     };
   }

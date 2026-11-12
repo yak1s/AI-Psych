@@ -103,10 +103,10 @@ export function StatusList({ view, ids, done, doneText = 'done!', waitText = 'th
       const p = who(pid);
       const ok = done.includes(pid);
       return html`<div key=${pid} class=${cx('status-item', ok && 'done')}>
-        <${Avatar} p=${p} size="sm" off=${!p.online} badge=${ok ? '✓' : !p.online ? '📡' : null} />
+        <${Avatar} p=${p} size="sm" off=${!p.online} badge=${ok ? '✓' : p.away ? '📱' : !p.online ? '📡' : null} />
         <div style="min-width:0">
           <div class="nm">${p.name}${pid === view.me ? ' (you)' : ''}</div>
-          <div class=${cx('st', !ok && 'writing')}>${ok ? doneText : !p.online ? 'reconnecting…' : html`<span class="row" style="gap:4px;flex-wrap:nowrap">${Doodle.pencil({ size: 16 })} ${waitText}</span>`}</div>
+          <div class=${cx('st', !ok && 'writing')}>${ok ? doneText : p.away ? 'in another app…' : !p.online ? 'reconnecting…' : html`<span class="row" style="gap:4px;flex-wrap:nowrap">${Doodle.pencil({ size: 16 })} ${waitText}</span>`}</div>
         </div>
       </div>`;
     })}

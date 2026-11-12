@@ -4,12 +4,15 @@
 # {Name}          -> a predicted player (match them to real players in the lobby)
 # {any} / {any2}  -> random players (different people)
 # Questions about a predicted player who doesn't join are skipped automatically.
+# ! in front of a question = must ask: it is always asked (spread over the game).
+# "Must ask: all" asks every must-ask question; "Must ask: 3" asks 3 of them per game.
 
 Title: Family Night
 Players: Mom, Dad, Sarah, Grandpa Joe
+Must ask: all
 
 [Level 1]
-What is {Mom}'s secret talent that nobody knows about?
+! What is {Mom}'s secret talent that nobody knows about?
 If {Dad} were a kitchen appliance, which one would it be?
 
 [Level 2]
@@ -21,7 +24,7 @@ What is hidden in the back of {Mom}'s closet?
 What did {any} really do last weekend?
 
 [Level 4]
-Why was {Dad} awake at 3am last Tuesday?
+! Why was {Dad} awake at 3am last Tuesday?
 What does {Sarah} really think of {Mom}'s cooking?
 
 [Level 5]

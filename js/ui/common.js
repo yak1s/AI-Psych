@@ -88,6 +88,32 @@ export function Btn({ color = 'sun', big, block, small, ghost, pulse, sound = 'p
     }}>${children}</button>`;
 }
 
+/**
+ * A text box that starts at `rows` lines, grows as you type up to `max` lines, then scrolls —
+ * never one endless line.
+ */
+export function AutoText({ value, onInput, rows = 1, max = 4, class: cls = '', ...rest }) {
+  const ref = useRef();
+  const fit = () => {
+    const el = ref.current;
+    if (!el) return;
+    const cs = getComputedStyle(el);
+    const line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.3;
+    const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    el.style.height = 'auto';
+    const min = line * rows + pad;
+    const cap = line * max + pad;
+    el.style.height = Math.min(cap, Math.max(min, el.scrollHeight)) + 'px';
+    el.style.overflowY = el.scrollHeight > cap + 1 ? 'auto' : 'hidden';
+  };
+  useEffect(fit, [value]);
+  useEffect(() => {
+    addEventListener('resize', fit);
+    return () => removeEventListener('resize', fit);
+  }, []);
+  return html`<textarea ref=${ref} class=${'input autotext ' + cls} rows=${rows} value=${value} onInput=${(e) => { onInput(e); fit(); }} ...${rest}></textarea>`;
+}
+
 export function Toggle({ checked, onChange, label, hint, testid }) {
   return html`<label class="toggle" data-testid=${testid}>
     <input type="checkbox" checked=${checked} onChange=${(e) => { sfx('tap'); onChange(e.currentTarget.checked); }} />

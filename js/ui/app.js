@@ -5,9 +5,10 @@ import { Home, HostSetup, JoinForm, Knocking, Ended, HowToPlay } from './home.js
 import { PlayerLobby, HostLobby } from './lobby.js';
 import { AnswerPhase, VotePhase, HostDock } from './game.js';
 import { ResultsPhase, FinalPhase } from './results.js';
-import { Greeting, JoinRequests, HandoverNote, DeviceToggles } from './people.js';
-import { remind } from './notify.js';
+import { Greeting, JoinRequests, HandoverNote, DeviceToggles, ComeBackTip } from './people.js';
+import { remind, notifyState } from './notify.js';
 import { trackAway } from '../signals.js';
+import { setInRoom, keepAliveWanted, keepAliveSupported } from './keepalive.js';
 import { HostController } from '../host-controller.js';
 import { PlayerController } from '../player-controller.js';
 import { sfx, isMuted, setMuted, onMuteChange } from './audio.js';
@@ -265,13 +266,30 @@ export function App({ boot }) {
   }, [mood]);
   useWakeLock(!!(view && view.game));
 
-  // Leaving the page mid-game is noticed (the AI may ask about it…)
+  // In a room: hold on to the connection while in other apps (see keepalive.js).
+  const inRoom = !!(ctrl && !ctrl.ended);
+  useEffect(() => setInRoom(inRoom), [inRoom]);
+
+  // Leaving the page mid-game is noticed (the AI may ask about it…), and everyone sees
+  // "in another app" instead of a mysterious disconnect.
+  const [tip, setTip] = useState(null);
   useEffect(() => {
     trackAway((ms) => {
       const c = ctrlRef.current;
       const g = c && !c.ended && c.view && c.view.game;
       if (g && g.phase !== 'final' && c.sendInfo) c.sendInfo({ awayMs: ms });
+      // Gone a while mid-game? Once per visit, offer what keeps you connected and nudged.
+      if (g && g.phase !== 'final' && ms > 15000 && !session.get('aipsych.awayTip') && ((keepAliveSupported() && !keepAliveWanted()) || notifyState() === 'ask' || notifyState() === 'off')) {
+        session.set('aipsych.awayTip', true);
+        setTip({ ms, at: Date.now() });
+      }
     });
+    const vis = () => {
+      const c = ctrlRef.current;
+      if (c && !c.ended && c.sendInfo) c.sendInfo({ away: document.visibilityState === 'hidden' });
+    };
+    document.addEventListener('visibilitychange', vis);
+    return () => document.removeEventListener('visibilitychange', vis);
   }, []);
 
   // Every question this device sees is remembered, so nobody gets it again in a later game.
@@ -362,6 +380,7 @@ export function App({ boot }) {
     ${ctrl && !ctrl.ended && view && html`<${HandoverNote} view=${view} />`}
     ${ctrl && !ctrl.ended && ctrl.isHost && view && html`<${JoinRequests} ctrl=${ctrl} view=${view} />`}
     <${Toast} toast=${ctrl && ctrl.toast} />
+    ${tip && ctrl && html`<${ComeBackTip} tip=${tip} onClose=${() => setTip(null)} />`}
     <${Splash} trigger=${splash} color=${mood >= 4 ? 'plum' : 'grape'} />
     ${menu &&
     html`<${Modal} onClose=${() => setMenu(false)} title="Menu">

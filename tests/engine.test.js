@@ -601,6 +601,68 @@ test('questions about several people are spread out', () => {
   assert.ok(backToBack <= 3, 'back to back ' + backToBack);
 });
 
+test('must-ask deck questions are always asked, spread over the game; text/CSV/JSON all mark them', () => {
+  const lines = ['Must ask: all'];
+  for (let l = 1; l <= 5; l++) for (let i = 0; i < 6; i++) lines.push(`${i < 1 ? '! ' : ''}${l}: Question ${l}.${i} about {any}?`);
+  const parsed = parseDeck(lines.join('\n'), 'd.txt');
+  assert.equal(parsed.deck.mustCount, 5);
+  for (let run = 0; run < 8; run++) {
+    const t = setup();
+    t.room.settings.rounds = 10;
+    assert.ok(t.act('Host', { type: 'deck', deck: JSON.parse(JSON.stringify(parsed.deck)) }).ok);
+    t.act('Host', { type: 'start' });
+    const asked = [];
+    for (let i = 0; i < 10; i++) {
+      asked.push(t.room.game.q.id);
+      playRound(t);
+      t.act('Host', { type: 'next' });
+    }
+    const must = new Set(parsed.deck.questions.filter((q) => q.must).map((q) => q.id));
+    assert.equal(asked.filter((id) => must.has(id)).length, 5, 'all 5 must-ask questions asked');
+  }
+  const csv = parseDeck('level,question,must\n1,"Hi {any}?",yes\n2,"Yo {any}?",\n', 'd.csv').deck;
+  assert.deepEqual(csv.questions.map((q) => !!q.must), [true, false]);
+  const json = parseDeck(JSON.stringify({ mustAsk: 1, questions: [{ level: 1, text: 'A {any}?', must: true }, { level: 1, text: 'B {any}?', must: true }] }), 'd.json').deck;
+  assert.equal(json.mustAsk, 1);
+  assert.equal(json.mustCount, 2);
+});
+
+test('extra personal climbs the creepiness levels faster', () => {
+  const levelsOf = (more) => {
+    const t = setup();
+    t.room.settings.rounds = 10;
+    t.room.settings.moreClues = more;
+    t.act('Host', { type: 'start' });
+    const out = [];
+    for (let i = 0; i < 10; i++) {
+      out.push(t.room.game.q.level);
+      playRound(t);
+      t.act('Host', { type: 'next' });
+    }
+    return out;
+  };
+  const normal = levelsOf(false);
+  const fast = levelsOf(true);
+  assert.ok(fast.slice(0, 6).reduce((a, b) => a + b) > normal.slice(0, 6).reduce((a, b) => a + b), `${fast} vs ${normal}`);
+  assert.equal(Math.max(...fast.slice(0, 7)), 5, 'top level reached early');
+});
+
+test('next to a custom deck only striking clue questions are used', () => {
+  const t = setup();
+  t.act('Host', { type: 'start' });
+  const g = t.room.game;
+  g.idx = 3;
+  const ids = t.room.players.map((p) => p.id);
+  t.room.stats[t.ids.Cid] = { lateJoin: 1, lateGame: g.id, joinedQ: 1, drops: 3 };
+  const all = dynamicCandidates(t.room, g, ids, t.ctx).map((x) => x.id);
+  const strong = dynamicCandidates(t.room, g, ids, t.ctx, { strongOnly: true }).map((x) => x.id);
+  assert.ok(all.includes('xhabit-dropouts') && !strong.includes('xhabit-dropouts'), '3 drops is not "very bad"');
+  assert.ok(strong.includes('xgroup-late-joiner'), strong.join(','));
+  assert.ok(strong.every((id) => all.includes(id)) && strong.length < all.length);
+  t.room.stats[t.ids.Cid].drops = 6;
+  assert.ok(dynamicCandidates(t.room, g, ids, t.ctx, { strongOnly: true }).some((x) => x.id === 'xhabit-dropouts'));
+});
+
 test('questions other players already played elsewhere are avoided', () => {
   const t = setup();
   const pool = E.questionPool(t.room);

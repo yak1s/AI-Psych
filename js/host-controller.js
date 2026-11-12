@@ -274,6 +274,15 @@ export class HostController {
   }
 
   _info(pid, msg) {
+    if (typeof msg.away === 'boolean') {
+      // In another app (the connection may drop for a bit): others see that instead of "reconnecting".
+      const a = (this.room.awayNow ||= {});
+      if (!!a[pid] !== msg.away) {
+        if (msg.away) a[pid] = Date.now();
+        else delete a[pid];
+        this.commit();
+      }
+    }
     if (msg.dev) this.room.signals[pid] = cleanSignals(msg.dev);
     if (msg.seen) this._mergeSeen(pid, msg.seen);
     if (Number.isFinite(msg.awayMs) && E.inGame(this.room)) {

@@ -85,6 +85,7 @@ function fromJson(data, res) {
     items = data;
   } else if (data && typeof data === 'object') {
     res.title = cleanText(data.title || data.name || '', 60);
+    if (data.mustAsk != null) res.mustAsk = data.mustAsk;
     const players = data.players || data.predictedPlayers || data.people;
     if (Array.isArray(players)) res.players.push(...players.map((p) => (typeof p === 'string' ? p : p && p.name)));
     if (Array.isArray(data.questions)) items = data.questions;
@@ -105,25 +106,35 @@ function fromJson(data, res) {
       res.raw.push({
         text: item.text ?? item.q ?? item.question ?? item.prompt ?? '',
         level: item.level ?? item.lvl ?? item.creepiness ?? item.creepy ?? 1,
+        must: truthy(item.must ?? item.mustAsk ?? item.required),
       });
     }
   }
 }
 
+function truthy(v) {
+  return v === true || v === 1 || /^(yes|y|true|1|x|must|!)$/i.test(String(v ?? '').trim());
+}
+
 function fromText(text, res) {
   let level = 1;
   for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim();
+    let line = rawLine.trim();
     if (!line || line.startsWith('#') || line.startsWith('//')) continue;
     let m;
     if ((m = /^(?:title|name)\s*[:=]\s*(.+)$/i.exec(line))) { res.title = cleanText(m[1], 60); continue; }
+    if ((m = /^must[- ]?ask\s*[:=]\s*(all|\d+)\s*$/i.exec(line))) { res.mustAsk = m[1]; continue; }
+    // A "!" in front marks a must-ask question: "! 3: What …" or "!What …"
+    const must = line.startsWith('!');
+    if (must) line = line.slice(1).trim();
+    const push = (t, l) => res.raw.push({ text: t, level: l, must });
     if ((m = /^(?:players|people|predicted(?: players)?)\s*[:=]\s*(.+)$/i.exec(line))) {
       res.players.push(...m[1].split(/[,;|]/));
       continue;
     }
     if ((m = /^[\[=\-\s]*(?:level|lvl|creepiness)\s*[:#]?\s*(\d+)[^\w{]*$/i.exec(line))) { level = parseInt(m[1], 10); continue; }
-    if ((m = /^(\d)\s*[|:\-)\].]\s+(.+)$/.exec(line))) { res.raw.push({ text: m[2], level: parseInt(m[1], 10) }); continue; }
-    res.raw.push({ text: line.replace(/^[-*•]\s+/, ''), level });
+    if ((m = /^(\d)\s*[|:\-)\].]\s+(.+)$/.exec(line))) { push(m[2], parseInt(m[1], 10)); continue; }
+    push(line.replace(/^[-*•]\s+/, ''), level);
   }
 }
 
@@ -133,10 +144,11 @@ function fromCsv(text, res) {
   const head = parseCsvLine(lines[0]).map((h) => h.toLowerCase());
   const qi = head.findIndex((h) => /question|text|prompt/.test(h));
   const li = head.findIndex((h) => /level|creep|lvl/.test(h));
+  const mi = head.findIndex((h) => /must|required/.test(h));
   const hasHeader = qi !== -1;
   for (let i = hasHeader ? 1 : 0; i < lines.length; i++) {
     const cells = parseCsvLine(lines[i]);
-    if (hasHeader) res.raw.push({ text: cells[qi] || '', level: li >= 0 ? cells[li] : 1 });
+    if (hasHeader) res.raw.push({ text: cells[qi] || '', level: li >= 0 ? cells[li] : 1, must: mi >= 0 && truthy(cells[mi]) });
     else if (cells.length >= 2 && /^\d+$/.test(cells[0])) res.raw.push({ text: cells.slice(1).join(', '), level: cells[0] });
     else res.raw.push({ text: cells.join(', '), level: 1 });
   }
@@ -232,7 +244,12 @@ export function parseDeck(text, fileName = 'deck') {
       warnings.push(`Level "${r.level}" is not 1–${MAX_LEVEL}; used ${clamp(Math.round(lvlNum) || 1, 1, MAX_LEVEL)} instead.`);
     }
     const q = makeQuestion(text, lvlNum, 'deck');
-    if (seen.has(q.id)) { skipped++; continue; }
+    if (r.must) q.must = true;
+    if (seen.has(q.id)) {
+      if (r.must) questions.find((x) => x.id === q.id).must = true;
+      skipped++;
+      continue;
+    }
     seen.add(q.id);
     const { named } = analyzeTemplate(q.text);
     for (const [key, display] of named) {
@@ -257,6 +274,10 @@ export function parseDeck(text, fileName = 'deck') {
   }
   const counts = {};
   for (const q of questions) counts[q.level] = (counts[q.level] || 0) + 1;
+  const mustCount = questions.filter((q) => q.must).length;
+  // How many must-ask questions per game: "all" (default) or a number.
+  const ma = String(res.mustAsk ?? 'all').trim().toLowerCase();
+  const mustAsk = ma === 'all' || !/^\d+$/.test(ma) ? 'all' : Math.max(0, parseInt(ma, 10));
   return {
     ok: true,
     errors,
@@ -267,6 +288,8 @@ export function parseDeck(text, fileName = 'deck') {
       predicted: [...predicted].map(([key, name]) => ({ key, name })),
       questions,
       counts,
+      mustCount,
+      mustAsk,
     },
   };
 }
@@ -301,15 +324,16 @@ export function segmentsToText(segs) {
 
 export const TEMPLATE_DECK = {
   title: 'Family Night',
+  mustAsk: 'all', // "must": true questions are always asked ("all"), or set a number per game
   players: ['Mom', 'Dad', 'Sarah', 'Grandpa Joe'],
   questions: [
-    { level: 1, text: "What is {Mom}'s secret talent that nobody knows about?" },
+    { level: 1, text: "What is {Mom}'s secret talent that nobody knows about?", must: true },
     { level: 1, text: 'If {Dad} were a kitchen appliance, which one would it be?' },
     { level: 2, text: 'What does {Sarah} actually do during "homework time"?' },
     { level: 2, text: 'What would {Grandpa Joe} and {Dad} argue about on a road trip?' },
     { level: 3, text: "What is hidden in the back of {Mom}'s closet?" },
     { level: 3, text: 'What did {any} really do last weekend?' },
-    { level: 4, text: 'Why was {Dad} awake at 3am last Tuesday?' },
+    { level: 4, text: 'Why was {Dad} awake at 3am last Tuesday?', must: true },
     { level: 4, text: "What does {Sarah} really think of {Mom}'s cooking?" },
     { level: 5, text: "What is {Grandpa Joe} planning for the next birthday that nobody has been told about?" },
     { level: 5, text: 'What is the name {any} whispers when nobody is around?' },

@@ -47,7 +47,7 @@ A hand-drawn, watercolor party game in the spirit of _Psych! Outwit Your Friends
 
 While you wait for the others there's a **waiting-room chat** (with emoji reactions). You only get messages sent while you're in a waiting room yourself — what you got stays with you for the rest of the room's games, with a marker where you were away.
 
-Switch to another app mid-game and the game reminds you (a notification where the browser allows it, otherwise a blinking tab title) when there's a new question, it's time to vote, or everyone is waiting for you. On phones the game goes full screen on the first tap (turn it off in the menu).
+Switch to another app mid-game and the game reminds you (a notification where the browser allows it, otherwise a blinking tab title) when there's a new question, it's time to vote, or everyone is waiting for you. Everyone else sees "in another app" next to your name instead of a mystery disconnect. Phones pause web pages in the background, so on phones there's also **🎧 Stay connected** (lobby and menu, off by default): a very soft background sound keeps the game running while you're in other apps, puts it in the phone's media controls ("time to vote!") and plays a chime when it needs you — it can pause music playing on the same phone, which is why it's opt-in. Come back after a while mid-game and the app offers it (and reminders) once. While you're in a room the page also holds a Web Lock, which stops Chrome from freezing it. On phones the game goes full screen on the first tap (turn it off in the menu).
 
 ### Host powers
 
@@ -63,17 +63,18 @@ Switch to another app mid-game and the game reminds you (a notification where th
 - Number of questions: 5 / 10 / 15
 - **Time limit**: Off, Chill (2:00 to write / 1:00 to vote), Normal (1:30 / 0:45) or Fast (1:00 / 0:30). With a limit the game moves on by itself: unsent text is submitted automatically. If someone submitted and then started editing, the original submitted answer counts.
 - "The person asked about writes an answer too" (on by default)
-- "Let the app use what it notices" — the clue questions (on by default), and "Extra personal: more questions about you, fewer generic ones" (off by default)
+- "Let the app use what it notices" — the clue questions (on by default), and "Extra personal: more about you, and creepier sooner" (off by default)
 - Top up with built-in questions if the deck runs out (if it's off and the deck doesn't have enough unused questions for the game, the host is told before the game starts and can add built-in questions with one tap)
 
 ---
 
-## The secret question deck
+## The secret deck
 
-The host can upload a **question deck** in the lobby at any time (even before anyone joins), and the room code stays on screen while they do it. The deck contains:
+The host can upload a **secret deck** of questions (the lobby card is collapsed until you open it) in the lobby at any time (even before anyone joins), and the room code stays on screen while they do it. The deck contains:
 
 - **Questions**, each with a **creepiness level from 1 to 5**
 - **Predicted players**: the people you expect to show up (e.g. "Mom", "Dad")
+- Optionally, **must-ask questions**: they're always asked, spread over the game (or a set number of them per game)
 
 After uploading, the host **matches each predicted player to someone who actually joined** (AI Psych pre-matches obvious ones, like "Mommy" → Mom). The questions then use **the name the player typed when joining**, not the name in the file. If a predicted player didn't join, leave them on "not here" and **every question about them is skipped**.
 
@@ -83,7 +84,7 @@ Without a deck, the app uses its 241 built-in questions (with random players) an
 
 ### Make a deck with AI
 
-The lobby's deck panel explains the idea and gives two ways to make one — or upload a deck you already have. Tap **✨ Make one with AI**. Fill in whatever you like (all optional): the occasion, where and when, how everyone is connected, a few words about each player, anything off limits, the most questions you want (30, 60 or 100 — the AI is told to write fewer rather than repeat itself when there isn't enough to go on), and the language. Tap **Copy the prompt**, paste it into ChatGPT, Gemini or Claude, then copy the AI's whole reply and paste it into **step 2**. The game cleans up the usual chat-AI mistakes by itself (code fences, chatter around the JSON, trailing commas, an answer cut off halfway). You can still **download the template** and write a deck by hand.
+The lobby's deck panel explains the idea and gives two ways to make one — or upload a deck you already have. Tap **✨ Make one with AI**. Fill in whatever you like (all optional) — the more you write, the better: the occasion, where and when, how everyone is connected, a few lines about each player (each box grows to 4 lines, then scrolls), anything you **must ask about** (the AI marks those questions as must-ask), anything off limits, the most questions you want (30, 60 or 100 — the AI is told to write fewer rather than repeat itself when there isn't enough to go on), and the language. Tap **Copy the prompt**, paste it into ChatGPT, Gemini or Claude, then copy the AI's whole reply and paste it into **step 2**. The game cleans up the usual chat-AI mistakes by itself (code fences, chatter around the JSON, trailing commas, an answer cut off halfway). You can still **download the template** and write a deck by hand.
 
 ## What the app notices (clue questions)
 
@@ -96,7 +97,9 @@ From that, the app writes questions **only when the clues make them interesting*
 - *Mia has typed and deleted 212 letters in her answers so far. What did Mia write and then erase?*
 - *It's 1:12 AM where Sam is. Why is Sam still awake?*
 
-There are 89 kinds of clue questions with 216 different wordings, many asked Psych-style ("what would {name}'s talk show be called?"). They only state facts the data really supports (e.g. "on mobile data" only when everyone else is known to be on Wi‑Fi; a town only when nobody nearby is placed in a different town — the internet location is trusted, just not to tell apart suburbs of one big city). They're grouped by category (place, device, language, network, time, habits, the group, the scoreboard), each with a per-game cap, and similar ones share a group so they never show up in the same game (and the same kind of clue is used less in later games). Someone who joined late gets asked about it a couple of questions later, not the moment they arrive. Clue questions the players already got in another game are skipped. They're mixed in at the right creepiness level, spread over different people, and never twice in a row. Turn them off in the settings — or turn on **Extra personal**: once the app has collected enough clues (at least 5 different situations), up to about 70% of the game comes from them instead of generic built-in questions. With a deck, your deck questions still come first (clues take up to about half), and once the deck runs out the game leans on clues rather than generic built-in questions.
+There are 89 kinds of clue questions with 216 different wordings, many asked Psych-style ("what would {name}'s talk show be called?"). They only state facts the data really supports (e.g. "on mobile data" only when everyone else is known to be on Wi‑Fi; a town only when nobody nearby is placed in a different town — the internet location is trusted, just not to tell apart suburbs of one big city). They're grouped by category (place, device, language, network, time, habits, the group, the scoreboard), each with a per-game cap, and similar ones share a group so they never show up in the same game (and the same kind of clue is used less in later games). Someone who joined late gets asked about it a couple of questions later, not the moment they arrive. Clue questions the players already got in another game are skipped. They're mixed in at the right creepiness level, spread over different people, and never twice in a row. Next to a custom deck, only the most striking clue questions are used (late arrivals, a really bad connection, extreme ways of playing — far longer answers, long streaks, fooling the person asked again and again — far-away places…).
+
+Turn them off in the settings — or turn on **Extra personal**, which does two things: the creepiness **climbs faster** (the top level arrives by about 60% of the game), and **more questions come from what the app noticed**: once it has collected enough clues (at least 5 different situations), up to about 70% of the game instead of generic built-in questions. With a deck, your deck questions still come first (striking clues take up to about half), and once the deck runs out the game leans on clues rather than generic built-in questions.
 
 ### Questions are never repeated
 
@@ -119,7 +122,7 @@ A question can mention **two players** (e.g. `What does {Sarah} really think of 
   "title": "Family Night",
   "players": ["Mom", "Dad", "Sarah", "Grandpa Joe"],
   "questions": [
-    { "level": 1, "text": "What is {Mom}'s secret talent that nobody knows about?" },
+    { "level": 1, "text": "What is {Mom}'s secret talent that nobody knows about?", "must": true },
     { "level": 2, "text": "What would {Grandpa Joe} and {Dad} argue about on a road trip?" },
     { "level": 3, "text": "What did {any} really do last weekend?" },
     { "level": 4, "text": "What does {Sarah} really think of {Mom}'s cooking?" },
@@ -128,7 +131,7 @@ A question can mention **two players** (e.g. `What does {Sarah} really think of 
 }
 ```
 
-`players` is optional (it's inferred from the placeholders), but listing them catches typos. Grouping by level also works: `"levels": { "1": ["…", "…"], "2": ["…"] }`.
+`players` is optional (it's inferred from the placeholders), but listing them catches typos. `"must": true` marks a **must-ask** question: the game makes sure it's asked, spread over the game (more than fit in one game carry over to the next). Add `"mustAsk": 3` at the top to ask only 3 of them per game (default `"all"`). Grouping by level also works: `"levels": { "1": ["…", "…"], "2": ["…"] }`.
 
 ### Format 2: plain text
 
@@ -143,15 +146,17 @@ What is {Mom}'s secret talent that nobody knows about?
 What is the name {any} whispers when nobody is around?
 ```
 
-Lines starting with `#` are comments. You can also prefix a single line with its level: `3| Why is {Dad} smiling?`
+Lines starting with `#` are comments. You can also prefix a single line with its level: `3| Why is {Dad} smiling?`. A `!` in front marks a must-ask question (`! 3| Why is {Dad} smiling?`), and a `Must ask: 3` line limits how many per game.
 
 ### Format 3: CSV (from a spreadsheet)
 
 ```csv
-level,question
-1,"What is {Mom}'s secret talent?"
-4,"Why was {Dad} awake at 3am last Tuesday?"
+level,question,must
+1,"What is {Mom}'s secret talent?",yes
+4,"Why was {Dad} awake at 3am last Tuesday?",
 ```
+
+The `must` column is optional (`yes` = must-ask).
 
 Templates for all three formats are in [`decks/`](decks/), and the lobby has a **download template** link.
 

@@ -179,7 +179,7 @@ function makeData(room, g, activeIds, ctx) {
 const T = [
   // ------------------------------------------------------------------ place
   {
-    id: 'place-odd-country', cat: 'place', level: 4,
+    id: 'place-odd-country', cat: 'place', level: 4, strong: true,
     text: [
       'Everyone here is in [others]… except {p1}, who is somewhere in [place]. What is {p1} really doing there?',
       'The app traced every phone to [others] — except {p1}\'s, which is in [place]. What is {p1} not telling everyone about this trip?',
@@ -217,7 +217,7 @@ const T = [
         }
       if (!best || best.k < 800) return null;
       const rounded = best.k > 3000 ? Math.round(best.k / 500) * 500 : Math.round(best.k / 100) * 100;
-      return { bind: { p1: best.a, p2: best.b }, vars: { km: rounded.toLocaleString('en-US') } };
+      return { bind: { p1: best.a, p2: best.b }, vars: { km: rounded.toLocaleString('en-US') }, strong: best.k >= 3000 };
     },
   },
   {
@@ -423,7 +423,7 @@ const T = [
       const c = d.ids.filter((p) => d.local[p] && (d.local[p].hour >= 23 || d.local[p].hour < 4));
       if (!c.length || c.length === d.ids.length) return null;
       const pid = c[Math.floor(random() * c.length)];
-      return { bind: { p1: pid }, vars: { time: d.local[pid].time } };
+      return { bind: { p1: pid }, vars: { time: d.local[pid].time }, strong: d.local[pid].hour >= 1 && d.local[pid].hour < 5 };
     },
   },
   {
@@ -479,7 +479,7 @@ const T = [
     ],
     when(d) {
       const t = top(d.ids, (p) => d.st(p).away || 0, { min: 2 });
-      return t ? { bind: { p1: t.pid }, vars: { n: t.value } } : null;
+      return t ? { bind: { p1: t.pid }, vars: { n: t.value }, strong: t.value >= 5 } : null;
     },
   },
   {
@@ -487,7 +487,7 @@ const T = [
     text: ['{p1} vanished from the game for [secs] seconds. Where did {p1} go?'],
     when(d) {
       const t = top(d.ids, (p) => (d.st(p).awayLongest || 0) / 1000, { min: 40 });
-      return t ? { bind: { p1: t.pid }, vars: { secs: n(t.value) } } : null;
+      return t ? { bind: { p1: t.pid }, vars: { secs: n(t.value) }, strong: t.value >= 120 } : null;
     },
   },
   {
@@ -569,7 +569,7 @@ const T = [
       const best = Object.entries(c).sort((a, b) => b[1] - a[1])[0];
       if (!best || best[1] < 3) return null;
       const [p1, p2] = best[0].split('|');
-      return { bind: { p1, p2 }, vars: { n: best[1] } };
+      return { bind: { p1, p2 }, vars: { n: best[1] }, strong: best[1] >= 4 };
     },
   },
   {
@@ -580,7 +580,7 @@ const T = [
         const e = d.H.flatMap((h) => h.entries.filter((x) => x.pid === p && !x.auto));
         return e.length >= 2 ? e.reduce((s, x) => s + x.len, 0) / e.length : null;
       }, { min: 45 });
-      return t ? { bind: { p1: t.pid } } : null;
+      return t ? { bind: { p1: t.pid }, strong: t.runnerUp != null && t.value >= t.runnerUp * 1.8 } : null;
     },
   },
   {
@@ -591,7 +591,7 @@ const T = [
         const e = d.H.flatMap((h) => h.entries.filter((x) => x.pid === p && !x.auto));
         return e.length >= 2 ? e.reduce((s, x) => s + x.len, 0) / e.length : null;
       }, { min: 14, low: true });
-      return t ? { bind: { p1: t.pid }, vars: { len: n(t.value) } } : null;
+      return t ? { bind: { p1: t.pid }, vars: { len: n(t.value) }, strong: t.runnerUp != null && t.runnerUp >= t.value * 2 } : null;
     },
   },
   {
@@ -620,13 +620,13 @@ const T = [
     text: ["{p1}'s connection has dropped [n] times. Where is {p1} hiding that the signal can't reach?"],
     when(d) {
       const t = top(d.ids, (p) => d.st(p).drops || 0, { min: 3 });
-      return t ? { bind: { p1: t.pid }, vars: { n: t.value } } : null;
+      return t ? { bind: { p1: t.pid }, vars: { n: t.value }, strong: t.value >= 5 } : null;
     },
   },
 
   // ------------------------------------------------------------------ the group
   {
-    id: 'group-late-joiner', cat: 'group', level: 2,
+    id: 'group-late-joiner', cat: 'group', level: 2, strong: true,
     text: [
       "{p1} showed up after the game started. What's the excuse, and what's the real reason?",
       "{p1} walked in late. Who did {p1} text 'on my way!' while still in bed?",
@@ -639,7 +639,7 @@ const T = [
     },
   },
   {
-    id: 'group-before-joined', cat: 'group', level: 3,
+    id: 'group-before-joined', cat: 'group', level: 3, strong: true,
     text: [
       'What was everybody saying about {p1} before {p1} joined the game?',
       "Which of the questions {p1} missed would have been the most dangerous for {p1}?",
@@ -695,7 +695,7 @@ const T = [
   },
   // ------------------------------------------------------------------ more places
   {
-    id: 'place-host-away', cat: 'place', level: 4, sim: 'place-odd',
+    id: 'place-host-away', cat: 'place', level: 4, sim: 'place-odd', strong: true,
     text: [
       'Everyone else is in [others], but our host {p1} is running this game from [place]. Why did {p1} really have to be so far away tonight?',
       "{p1} is hosting from [place] while everyone else is in [others]. What is {p1} going to bring back to apologize?",
@@ -720,7 +720,7 @@ const T = [
     },
   },
   {
-    id: 'place-many-countries', cat: 'place', level: 2, sim: 'place-many',
+    id: 'place-many-countries', cat: 'place', level: 2, sim: 'place-many', strong: true,
     text: [
       'This game is happening in [n] countries at once. What is {p1} going to bring back for everyone — and what will {p1} quietly keep?',
       'Players in [n] different countries tonight. Which country would {p1} move to tomorrow if nobody could stop them?',
@@ -855,7 +855,7 @@ const T = [
     },
   },
   {
-    id: 'time-tomorrow', cat: 'time', level: 4, sim: 'time-diff',
+    id: 'time-tomorrow', cat: 'time', level: 4, sim: 'time-diff', strong: true,
     text: [
       "It's already [d1] for {p1}, but still [d2] for {p2}. What does {p1} know about tomorrow that {p2} doesn't?",
       '{p1} is living in tomorrow ([d1]) while {p2} is stuck in [d2]. What should {p1} warn {p2} about?',
@@ -897,7 +897,7 @@ const T = [
     text: ['The clock had to grab {p1}\'s answer [n] times tonight. What was {p1} doing instead of typing?'],
     when(d) {
       const t = top(d.ids, (p) => d.H.filter((h) => h.entries.some((e) => e.pid === p && e.auto)).length, { min: 2 });
-      return t ? { bind: { p1: t.pid }, vars: { n: t.value } } : null;
+      return t ? { bind: { p1: t.pid }, vars: { n: t.value }, strong: t.value >= 3 } : null;
     },
   },
   {
@@ -952,7 +952,7 @@ const T = [
     ],
     when(d) {
       const t = top(d.ids, (p) => d.H.reduce((sum, h) => sum + h.votes.filter(([, a]) => a === p).length, 0), { min: 4 });
-      return t && t.runnerUp != null && t.value >= t.runnerUp + 2 ? { bind: { p1: t.pid }, vars: { n: t.value } } : null;
+      return t && t.runnerUp != null && t.value >= t.runnerUp + 2 ? { bind: { p1: t.pid }, vars: { n: t.value }, strong: t.value >= t.runnerUp * 2 } : null;
     },
   },
   {
@@ -960,7 +960,7 @@ const T = [
     text: ["{p1}'s answers got crickets [n] times tonight. Which of them was secretly the best answer of the night?"],
     when(d) {
       const t = top(d.ids, (p) => d.H.filter((h) => h.entries.some((e) => e.pid === p && !e.judge && !e.crowd)).length, { min: 3 });
-      return t ? { bind: { p1: t.pid }, vars: { n: t.value } } : null;
+      return t ? { bind: { p1: t.pid }, vars: { n: t.value }, strong: t.value >= 4 } : null;
     },
   },
 
@@ -1023,7 +1023,7 @@ const T = [
     ],
     when(d) {
       const t = top(d.ids, (p) => d.H.reduce((sum, h) => sum + h.entries.filter((e) => e.pid === p && e.judge).length, 0), { min: 2 });
-      return t ? { bind: { p1: t.pid }, vars: { n: t.value } } : null;
+      return t ? { bind: { p1: t.pid }, vars: { n: t.value }, strong: t.value >= 3 } : null;
     },
   },
   {
@@ -1041,11 +1041,11 @@ const T = [
         for (let i = r.length - 1; i >= 0 && r[i] > 0; i--) k++;
         return k;
       }, { min: 3 });
-      return t ? { bind: { p1: t.pid }, vars: { n: t.value, dev: deviceWord(d.sig(t.pid)) } } : null;
+      return t ? { bind: { p1: t.pid }, vars: { n: t.value, dev: deviceWord(d.sig(t.pid)) }, strong: t.value >= 4 } : null;
     },
   },
   {
-    id: 'perf-comeback', cat: 'perf', level: 3, sim: 'perf-rank',
+    id: 'perf-comeback', cat: 'perf', level: 3, sim: 'perf-rank', strong: true,
     text: [
       '{p1} went from last place to [place] place. What did {p1} promise someone to make that happen?',
       "{p1} was in last place and now is [place]. What's the name of {p1}'s comeback documentary?",
@@ -1076,7 +1076,7 @@ const T = [
     },
   },
   {
-    id: 'perf-zero', cat: 'perf', level: 2, sim: 'group-score',
+    id: 'perf-zero', cat: 'perf', level: 2, sim: 'group-score', strong: true,
     text: [
       '{p1} still has zero points. Finish {p1}\'s sentence: "I\'m not losing, I\'m just…"',
       "{p1} hasn't scored a single point yet. What does {p1}'s [dev] know about this that we don't?",
@@ -1141,7 +1141,7 @@ const T = [
     },
   },
   {
-    id: 'perf-late-catchup', cat: 'perf', level: 3, sim: 'group-late',
+    id: 'perf-late-catchup', cat: 'perf', level: 3, sim: 'group-late', strong: true,
     text: [
       '{p1} joined late and has already passed [n] people who were here from the start. What is {p1}\'s secret?',
       "{p1} missed the beginning and still beat [n] of you. Who should be most embarrassed right now?",
@@ -1283,7 +1283,12 @@ function fill(text, bind, vars = {}) {
  * Every dynamic question that could be asked right now:
  * [{ id, cat, level, text, bind: {p1: pid}, weightPenalty }]
  */
-export function dynamicCandidates(room, g, activeIds, ctx) {
+/**
+ * opts.strongOnly: only the really striking ones (used next to a custom deck — those questions are
+ * better than an ordinary clue): late joiners, a really bad connection, extreme ways of playing,
+ * far-away places…
+ */
+export function dynamicCandidates(room, g, activeIds, ctx, opts = {}) {
   if (!g || activeIds.length < 2) return [];
   const d = makeData(room, g, activeIds, ctx || { now: Date.now() });
   const used = new Set(room.used || []);
@@ -1300,6 +1305,7 @@ export function dynamicCandidates(room, g, activeIds, ctx) {
       b = null;
     }
     if (!b || Object.values(b.bind).some((pid) => !activeIds.includes(pid))) continue;
+    if (opts.strongOnly && !(b.strong ?? t.strong)) continue;
     if (new Set(Object.values(b.bind)).size !== Object.keys(b.bind).length) continue;
     const phrase = t.text[Math.floor(random() * t.text.length)];
     // spread these questions over different people too

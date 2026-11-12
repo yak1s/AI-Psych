@@ -6,6 +6,7 @@ import { Btn, Avatar, Modal, Confirm, playerMap } from './common.js';
 import { sfx, haptic } from './audio.js';
 import { notifyState, enableNotify, disableNotify } from './notify.js';
 import { fullscreenSupported, fullscreenWanted, setFullscreen } from './fullscreen.js';
+import { keepAliveSupported, keepAliveWanted, setKeepAlive } from './keepalive.js';
 
 const WELCOMES = [
   'Welcome, {name}! Your seat is warm and your file is open. 📁',
@@ -99,7 +100,7 @@ export function PlayersPanel({ ctrl, view, onClose }) {
       ${view.players.map((p) => html`<div key=${p.id} class="row" style="justify-content:space-between;flex-wrap:nowrap;gap:8px">
         <span class="row" style="gap:8px;flex-wrap:nowrap;min-width:0">
           <${Avatar} p=${p} size="sm" off=${!p.online} />
-          <span style="min-width:0"><b>${p.name}</b>${p.isHost ? ' (host)' : ''}<br /><span class="muted small">${p.online ? (p.net === 'relay' ? 'online (backup relay)' : 'online') : 'disconnected'}</span></span>
+          <span style="min-width:0"><b>${p.name}</b>${p.isHost ? ' (host)' : ''}<br /><span class="muted small">${p.away ? 'in another app' : p.online ? (p.net === 'relay' ? 'online (backup relay)' : 'online') : 'disconnected'}</span></span>
         </span>
         <span class="row" style="gap:6px;flex-wrap:nowrap">
           ${deck &&
@@ -124,7 +125,28 @@ export function PlayersPanel({ ctrl, view, onClose }) {
   <//>`;
 }
 
-/** Reminders and full screen, side by side (lobby and menu). */
+/** Back from another app mid-game: offer what keeps you connected and nudged (once per visit). */
+export function ComeBackTip({ tip, onClose }) {
+  const [, bump] = useState(0);
+  const ns = notifyState();
+  const secs = Math.round(tip.ms / 1000);
+  return html`<${Modal} onClose=${onClose} title="👋 Welcome back!">
+    <div data-testid="come-back-tip">
+      <p style="margin-top:0">You were in another app for ${secs >= 90 ? `${Math.round(secs / 60)} minutes` : `${secs} seconds`}. Phones pause the game in the background, so it can lose you for a moment. Next time:</p>
+      <div class="stack" style="gap:10px">
+        ${keepAliveSupported() &&
+        html`<${Btn} block color=${keepAliveWanted() ? 'mint' : 'grape'} testid="tip-keepalive" onClick=${() => { setKeepAlive(!keepAliveWanted()); bump((x) => x + 1); }}>
+          🎧 Stay connected ${keepAliveWanted() ? '✓' : ''}<//>
+        <span class="muted small" style="margin-top:-4px">Keeps the game running in the background (a very soft sound) and chimes when it needs you. It may pause music on this phone.</span>`}
+        ${(ns === 'ask' || ns === 'off') &&
+        html`<${Btn} block color="sky" testid="tip-notify" onClick=${async () => { await enableNotify(); bump((x) => x + 1); }}>🔔 Remind me when it's my turn<//>`}
+        <${Btn} block color="paper" sound="tap" onClick=${onClose}>Got it<//>
+      </div>
+    </div>
+  <//>`;
+}
+
+/** Reminders, full screen and stay connected, side by side (lobby and menu). */
 export function DeviceToggles({ card = true }) {
   const [, bump] = useState(0);
   useEffect(() => {
@@ -134,7 +156,8 @@ export function DeviceToggles({ card = true }) {
   }, []);
   const ns = notifyState();
   const fs = fullscreenSupported();
-  if (ns === 'unsupported' && !fs) return null;
+  const ka = keepAliveSupported();
+  if (ns === 'unsupported' && !fs && !ka) return null;
   const body = html`<div class="device-toggles" data-testid="device-toggles">
     ${ns !== 'unsupported' &&
     html`<${Btn} small color=${ns === 'on' ? 'mint' : 'paper'} sound="tap" testid="notify-toggle" title="A nudge when it's your turn, even in another app"
@@ -145,6 +168,12 @@ export function DeviceToggles({ card = true }) {
     html`<${Btn} small color=${fullscreenWanted() ? 'mint' : 'paper'} sound="tap" testid="fullscreen-toggle"
       onClick=${() => { setFullscreen(!fullscreenWanted()); bump((x) => x + 1); }}>
       ⛶ Full screen <span class="state">${fullscreenWanted() ? 'on' : 'off'}</span>
+    <//>`}
+    ${ka &&
+    html`<${Btn} small color=${keepAliveWanted() ? 'mint' : 'paper'} sound="tap" testid="keepalive-toggle"
+      title="Keeps the game running while you use other apps (a very soft sound in the background), with a chime when it's your turn. May pause music on this phone."
+      onClick=${() => { setKeepAlive(!keepAliveWanted()); bump((x) => x + 1); }}>
+      🎧 Stay connected <span class="state">${keepAliveWanted() ? 'on' : 'off'}</span>
     <//>`}
   </div>`;
   if (!card) return body;

@@ -3,6 +3,7 @@ import { App } from './ui/app.js';
 import { installArt } from './ui/art.js';
 import { unlockAudio } from './ui/audio.js';
 import { installAutoFullscreen } from './ui/fullscreen.js';
+import { installKeepAlive } from './ui/keepalive.js';
 import { HostController } from './host-controller.js';
 import { PlayerController } from './player-controller.js';
 import { session, KEYS } from './storage.js';
@@ -10,6 +11,7 @@ import { session, KEYS } from './storage.js';
 installArt();
 unlockAudio();
 installAutoFullscreen();
+installKeepAlive();
 stableBackground();
 
 // Decide where to start: a refresh of an active tab resumes silently.

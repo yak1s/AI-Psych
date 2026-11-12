@@ -2,6 +2,7 @@
 // notification where the browser allows it, plus a blinking tab title.
 
 import { local, KEYS } from '../storage.js';
+import { needYou } from './keepalive.js';
 
 export function notifySupported() {
   return typeof Notification !== 'undefined';
@@ -53,6 +54,7 @@ if (typeof document !== 'undefined') {
 export async function remind(title, body, tag = 'aipsych') {
   if (typeof document === 'undefined' || document.visibilityState === 'visible') return;
   flashTitle(title);
+  needYou(title); // "Stay connected": media controls + a chime
   if (notifyState() !== 'on') return;
   const opts = { body, tag, renotify: true, icon: 'assets/icon.svg', badge: 'assets/icon.svg', vibrate: [80, 40, 80] };
   try {
