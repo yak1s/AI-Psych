@@ -2,7 +2,7 @@ import { html, useState, useEffect, useRef } from '../vendor/preact-htm.js';
 import { Btn, Avatar, PName, QuestionText, Doodle, cx, playerMap, useStep, confetti } from './common.js';
 import { brush, wash } from './art.js';
 import { seen, markSeen } from '../storage.js';
-import { Settings } from './lobby.js';
+import { Settings, deckShortfall, useGuardedStart } from './lobby.js';
 import { sfx, buzz, haptic } from './audio.js';
 import { WaitChat } from './chat.js';
 
@@ -237,18 +237,23 @@ function NextGame({ ctrl, view }) {
   const g = view.game;
   const info = view.host;
   const pool = info.pool;
-  const n = Math.min(info.settings.rounds, pool.total);
+  const short = deckShortfall(info);
+  const guard = useGuardedStart(ctrl, info, 'playAgain');
+  const n = short ? short.rounds : Math.min(info.settings.rounds, pool.total);
   return html`<div class="stack next-game" style="width:100%" data-testid="next-game">
     <div class="card">
       <div class="card-title">🔁 Ready for game ${g.number + 1}?</div>
       <p style="margin:0">Same room and players. Scores start from zero, the trophy cabinet keeps counting, and the app never asks a question twice.</p>
     </div>
     <${Settings} ctrl=${ctrl} info=${info} title=${`Settings for game ${g.number + 1}`} />
-    <p class="muted small center" style="margin:0">${pool.total ? `${pool.total} fresh question${pool.total === 1 ? '' : 's'} left${pool.total < info.settings.rounds ? ` — this game will be ${pool.total} long` : ''}.` : 'No fresh questions left — go back to the lobby to load another deck or reset.'}</p>
+    <p class="muted small center" style="margin:0">${short
+      ? html`<span style="color:#b3261e">${short.left ? `Only ${short.left} unused deck question${short.left === 1 ? '' : 's'} left` : 'All deck questions were already played'} — turn on built-in questions to fill the game.</span>`
+      : pool.total ? `${pool.total} fresh question${pool.total === 1 ? '' : 's'} left${pool.total < info.settings.rounds ? ` — this game will be ${pool.total} long` : ''}.` : 'No fresh questions left — go back to the lobby to load another deck or reset.'}</p>
     <div class="row center">
       <${Btn} color="paper" sound="tap" onClick=${() => ctrl.dispatch({ type: 'endGame' })} testid="back-lobby">Lobby (deck & players)<//>
-      <${Btn} big color="coral" pulse disabled=${!pool.total} onClick=${() => ctrl.dispatch({ type: 'playAgain' })} sound="whoosh" testid="play-again">▶ Start game ${g.number + 1} (${n} questions)<//>
+      <${Btn} big color="coral" pulse disabled=${!guard.canStart} onClick=${guard.start} sound="whoosh" testid="play-again">▶ Start game ${g.number + 1} (${n} questions)<//>
     </div>
+    ${guard.dialog}
   </div>`;
 }
 

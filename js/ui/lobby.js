@@ -157,7 +157,7 @@ export function Settings({ ctrl, info, title = 'Game settings' }) {
     html`<${Toggle} checked=${!!s.moreClues} onChange=${(v) => set({ moreClues: v })} testid="more-clues"
       label="Extra personal: more questions about you, fewer generic ones"
       hint="Leans on what the app has noticed about the players — with or without a deck. Starts once it has noticed enough." />`}
-    ${info.deck && html`<${Toggle} checked=${s.fillStarter} onChange=${(v) => set({ fillStarter: v })} label="Top up with built-in questions if the deck runs out" />`}
+    ${info.deck && html`<${Toggle} checked=${s.fillStarter} onChange=${(v) => set({ fillStarter: v })} label="Top up with built-in questions if the deck runs out" testid="fill-starter" />`}
   </div>`;
 }
 
@@ -257,6 +257,47 @@ function DeckPanel({ ctrl, view, info }) {
   </div>`;
 }
 
+/**
+ * About to start with a deck that can't fill the game (generic questions are off)?
+ * Returns { left, rounds } or null.
+ */
+export function deckShortfall(info) {
+  const pool = info.pool;
+  if (!info.deck || info.settings.fillStarter || pool.deck >= info.settings.rounds) return null;
+  return { left: pool.deck, rounds: info.settings.rounds, builtin: pool.builtinLeft || 0 };
+}
+
+/** Starts the game — but first says so when the deck doesn't have enough unused questions. */
+export function useGuardedStart(ctrl, info, type) {
+  const [ask, setAsk] = useState(null);
+  const start = () => {
+    const short = deckShortfall(info);
+    if (short) setAsk(short);
+    else ctrl.dispatch({ type });
+  };
+  const dialog =
+    ask &&
+    html`<${Modal} onClose=${() => setAsk(null)} title=${ask.left ? '🃏 The deck is running low' : '🃏 The deck is used up'}>
+      <div data-testid="deck-short">
+        <p style="margin-top:0">${ask.left
+          ? `Only ${ask.left} unused deck question${ask.left === 1 ? '' : 's'} left for this group — not enough for a ${ask.rounds}-question game.`
+          : 'Every deck question has already been played with this group.'}
+          ${ask.builtin ? ` Add built-in questions to fill the rest of the game?` : ''}</p>
+        <div class="stack" style="gap:10px">
+          ${ask.builtin > 0 &&
+          html`<${Btn} block color="mint" testid="deck-short-fill" onClick=${() => { ctrl.dispatch({ type: 'settings', settings: { fillStarter: true } }); ctrl.dispatch({ type }); setAsk(null); }}>
+            Add built-in questions & start ▶<//>`}
+          ${ask.left > 0 &&
+          html`<${Btn} block color="paper" testid="deck-short-play" onClick=${() => { ctrl.dispatch({ type }); setAsk(null); }}>
+            Play just ${ask.left} deck question${ask.left === 1 ? '' : 's'}<//>`}
+          <${Btn} block color="paper" sound="tap" onClick=${() => setAsk(null)}>Not yet (load another deck)<//>
+        </div>
+      </div>
+    <//>`;
+  const short = deckShortfall(info);
+  return { start, dialog, canStart: info.pool.total > 0 || !!(short && short.builtin > 0) };
+}
+
 export function HostLobby({ ctrl, view }) {
   useJoinSounds(view);
   const info = view.host;
@@ -264,9 +305,13 @@ export function HostLobby({ ctrl, view }) {
   const [faces, setFaces] = useState(false);
   const n = view.players.length;
   const pool = info.pool;
-  const rounds = Math.min(info.settings.rounds, pool.total);
+  const short = deckShortfall(info);
+  const guard = useGuardedStart(ctrl, info, 'start');
+  const rounds = short ? short.rounds : Math.min(info.settings.rounds, pool.total);
   let poolNote;
-  if (!pool.total) poolNote = html`<span style="color:#b3261e">No fresh questions left for this group — load a deck or reset used questions.</span>`;
+  if (short) poolNote = html`<span style="color:#b3261e">${short.left ? `Only ${short.left} unused deck question${short.left === 1 ? '' : 's'} left` : 'All deck questions were already played'} — turn on built-in questions to fill the game.</span>`;
+  else if (info.deck && pool.deck < info.settings.rounds && pool.total) poolNote = html`Only ${pool.deck} unused deck question${pool.deck === 1 ? '' : 's'} left — the rest of the game will be built-in questions.`;
+  else if (!pool.total) poolNote = html`<span style="color:#b3261e">No fresh questions left for this group — load a deck or reset used questions.</span>`;
   else if (pool.total < info.settings.rounds) poolNote = html`Only ${pool.total} fresh question${pool.total === 1 ? '' : 's'} left — this game will be ${pool.total} long.`;
   else poolNote = html`${info.deck ? `${pool.deck} deck question${pool.deck === 1 ? '' : 's'} ready` : `${info.builtin.total} built-in questions ready`}${info.deck && info.settings.fillStarter ? ` (+ ${info.builtin.total} built-in as backup)` : ''}.`;
 
@@ -286,13 +331,14 @@ export function HostLobby({ ctrl, view }) {
         <${DeckPanel} ctrl=${ctrl} view=${view} info=${info} />
         <div class="card stack" style="align-items:center;text-align:center">
           <div class="muted small">${poolNote}</div>
-          <${Btn} big block color="coral" pulse=${n >= MIN_PLAYERS && pool.total > 0} disabled=${n < MIN_PLAYERS || !pool.total}
-            onClick=${() => ctrl.dispatch({ type: 'start' })} sound="whoosh" testid="start-game">
+          <${Btn} big block color="coral" pulse=${n >= MIN_PLAYERS && guard.canStart} disabled=${n < MIN_PLAYERS || !guard.canStart}
+            onClick=${guard.start} sound="whoosh" testid="start-game">
             ${n < MIN_PLAYERS ? 'Waiting for players…' : `Start game ▶ (${rounds} questions)`}
           <//>
         </div>
       </div>
     </div>
+    ${guard.dialog}
     ${faces && html`<${FacePicker} ctrl=${ctrl} view=${view} onClose=${() => setFaces(false)} />`}
     ${kick && html`<${Confirm} title=${`Remove ${kick.name}?`} text="They'll be kicked out of the room. (They can rejoin with a new name.)" yes="Remove"
       onNo=${() => setKick(null)} onYes=${() => { ctrl.dispatch({ type: 'kick', pid: kick.id }); setKick(null); }} />`}

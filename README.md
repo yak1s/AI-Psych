@@ -64,7 +64,7 @@ Switch to another app mid-game and the game reminds you (a notification where th
 - **Time limit**: Off, Chill (2:00 to write / 1:00 to vote), Normal (1:30 / 0:45) or Fast (1:00 / 0:30). With a limit the game moves on by itself: unsent text is submitted automatically. If someone submitted and then started editing, the original submitted answer counts.
 - "The person asked about writes an answer too" (on by default)
 - "Let the app use what it notices" — the clue questions (on by default), and "Extra personal: more questions about you, fewer generic ones" (off by default)
-- Top up with built-in questions if the deck runs out
+- Top up with built-in questions if the deck runs out (if it's off and the deck doesn't have enough unused questions for the game, the host is told before the game starts and can add built-in questions with one tap)
 
 ---
 
@@ -83,7 +83,7 @@ Without a deck, the app uses its 241 built-in questions (with random players) an
 
 ### Make a deck with AI
 
-The lobby's deck panel explains the idea and gives two ways to make one — or upload a deck you already have. Tap **✨ Make one with AI**. Fill in whatever you like (all optional): the occasion, where and when, how everyone is connected, a few words about each player, anything off limits, how many questions (30, 60 or 100), and the language. Tap **Copy the prompt**, paste it into ChatGPT, Gemini or Claude, then copy the AI's whole reply and paste it into **step 2**. The game cleans up the usual chat-AI mistakes by itself (code fences, chatter around the JSON, trailing commas, an answer cut off halfway). You can still **download the template** and write a deck by hand.
+The lobby's deck panel explains the idea and gives two ways to make one — or upload a deck you already have. Tap **✨ Make one with AI**. Fill in whatever you like (all optional): the occasion, where and when, how everyone is connected, a few words about each player, anything off limits, the most questions you want (30, 60 or 100 — the AI is told to write fewer rather than repeat itself when there isn't enough to go on), and the language. Tap **Copy the prompt**, paste it into ChatGPT, Gemini or Claude, then copy the AI's whole reply and paste it into **step 2**. The game cleans up the usual chat-AI mistakes by itself (code fences, chatter around the JSON, trailing commas, an answer cut off halfway). You can still **download the template** and write a deck by hand.
 
 ## What the app notices (clue questions)
 

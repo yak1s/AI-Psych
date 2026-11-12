@@ -367,6 +367,24 @@ test('the host vanishes mid-game: the next device takes over, nobody loses their
   for (const p of [host, ann, bob]) await p.context().close();
 });
 
+test('a deck too small for the game: the host is told before it starts and can add built-in questions', { timeout: 120000 }, async () => {
+  const { host, code } = await hostRoom(world, 'Hosty', { width: 1100, height: 900 });
+  const deck = { questions: [1, 2, 3].map((i) => ({ level: i, text: `Deck question ${i} about {any}?` })) };
+  await host.getByTestId('deck-input').setInputFiles({ name: 'small.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(deck)) });
+  await until(() => state(host, (c) => !!c.room.deck));
+  const others = [await joinRoom(world, code, 'Ann'), await joinRoom(world, code, 'Bob')];
+  await press(host.getByTestId('fill-starter').locator('input'));
+  await until(() => state(host, (c) => c.room.settings.fillStarter === false));
+  await tap(host, 'start-game');
+  await host.getByTestId('deck-short').waitFor({ timeout: 5000 });
+  assert.equal(await state(host, (c) => !!c.room.game), false, 'not started yet');
+  await tap(host, 'deck-short-fill');
+  await until(() => state(host, (c) => !!c.room.game));
+  assert.equal(await state(host, (c) => c.room.game.n), 10, 'a full game with built-in questions');
+  assert.equal(await state(host, (c) => c.room.settings.fillStarter), true);
+  for (const p of [host, ...others]) await p.context().close();
+});
+
 test('lost your phone? Join with the same name on another device and get your seat back', { timeout: 120000 }, async () => {
   const { host, code } = await hostRoom(world);
   const ann = await joinRoom(world, code, 'Ann');

@@ -11,7 +11,6 @@ const COUNTS = [30, 60, 100];
 
 export function buildPrompt(f) {
   const people = f.people.filter((p) => p.name.trim());
-  const perLevel = Math.round(f.count / 5);
   const names = people.map((p) => p.name.trim());
   const n1 = names[0] || 'Name';
   const n2 = names[1] || 'any';
@@ -27,7 +26,8 @@ export function buildPrompt(f) {
     `- makes the group laugh, or say "how does it know that?!"`,
     ``,
     `# Your task`,
-    `Write ${f.count} questions for the group below. They should feel personal, as if the AI has been quietly watching this exact group.`,
+    `Write up to ${f.count} questions for the group below. They should feel personal, as if the AI has been quietly watching this exact group.`,
+    `${f.count} is a maximum, not a target: if the details below only support fewer genuinely different questions, write fewer. Never pad with repeats, near-duplicates or generic filler — every question must ask something new.`,
     ``,
     `# The group (from the host — anything not mentioned is unknown; never invent serious facts)`,
   );
@@ -51,7 +51,7 @@ export function buildPrompt(f) {
     `- Spread the questions evenly: every listed player appears about equally often, at every level.`,
     `- Repeat the name instead of using he/she/they, unless the details above make the pronoun clear.`,
     ``,
-    `# Creepiness levels — exactly ${perLevel} questions per level`,
+    `# Creepiness levels — spread the questions evenly over the 5 levels (about the same number each)`,
     `1. Innocent — playful warm-ups built on real details (hobbies, jobs, places, the occasion).`,
     `2. Curious — the AI starts noticing habits and little quirks.`,
     `3. Suspicious — the AI connects two details and draws a funny, slightly accusing conclusion.`,
@@ -97,7 +97,7 @@ export function buildPrompt(f) {
     `- Valid JSON: double quotes, no comments, no trailing commas. "level" is a number from 1 to 5. List the questions in order of level.`,
     `- If everything doesn't fit in one reply, stop after a complete question and close the JSON properly; I'll ask you to continue.`,
     ``,
-    `Before answering, check: ${f.count} questions, ${perLevel} per level, every {Name} spelled exactly as in "players", every question names someone, no near-duplicates, valid JSON.`,
+    `Before answering, check: at most ${f.count} questions (fewer is fine), about even across the levels, every {Name} spelled exactly as in "players", every question names someone, no near-duplicates, valid JSON.`,
   );
   if (f.language && !/^english$/i.test(f.language.trim())) L.push(``, `Write every question in ${f.language.trim()} (keep the JSON keys and the {Names} exactly as they are).`);
   return L.join('\n');
@@ -184,8 +184,8 @@ export function AiDeckHelper({ view, deckNames = [], onClose, onPaste, onTemplat
             <input class="input" value=${f.avoid} placeholder="e.g. no politics, don't mention the divorce" onInput=${(e) => set({ avoid: e.currentTarget.value })} />
           </label>
           <div class="row" style="justify-content:space-between">
-            <label class="row" style="gap:6px">Questions
-              <select value=${f.count} onChange=${(e) => set({ count: Number(e.currentTarget.value) })}>${COUNTS.map((n) => html`<option key=${n} value=${n}>${n}</option>`)}</select>
+            <label class="row" style="gap:6px" title="The AI writes fewer if there isn't enough to say">Up to
+              <select value=${f.count} onChange=${(e) => set({ count: Number(e.currentTarget.value) })}>${COUNTS.map((n) => html`<option key=${n} value=${n}>${n}</option>`)}</select> questions
             </label>
             <label class="row" style="gap:6px">Language
               <input class="input" style="width:120px" value=${f.language} onInput=${(e) => set({ language: e.currentTarget.value })} />

@@ -1027,7 +1027,7 @@ export function hostInfo(room) {
     deck,
     builtin,
     requests: (room.requests || []).filter((r) => r.status === 'waiting'),
-    pool: { deck: pool.deck.length, starter: pool.starter.length, total: pool.total, byLevel },
+    pool: { deck: pool.deck.length, starter: pool.starter.length, total: pool.total, byLevel, builtinLeft: eligibleStarter(activeIds).filter((q) => !room.used.includes(q.id)).length },
     usedCount: room.used.length,
     settings: room.settings,
   };
