@@ -410,7 +410,7 @@ test('a player switches to another app: others see it, and coming back offers "s
   // The inaudible background sound plays (12 s, so Android gives it a real media session)…
   const ka = (fn) => ann.evaluate(`import('./js/ui/keepalive.js').then((m) => (${fn})(m))`);
   await until(() => ka((m) => m.keepAliveState().playing), 5000);
-  assert.equal(await ka((m) => m.keepAliveState().duration), 12);
+  await until(() => ka((m) => m.keepAliveState().duration === 12), 5000); // once the browser has read the file
   // …and when the phone stops it, it comes back by itself.
   await ka((m) => m._phoneStops());
   await until(() => ka((m) => m.keepAliveState().playing), 5000);
