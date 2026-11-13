@@ -169,15 +169,14 @@ export function DeviceToggles({ card = true }) {
       ⛶ Full screen <span class="state">${fullscreenWanted() ? 'on' : 'off'}</span>
     <//>`}
     ${ka &&
-    html`<${Btn} small color=${keepAliveWanted() ? 'mint' : 'paper'} sound="tap" testid="keepalive-toggle"
-      title="Keeps the game running while you use other apps, with a chime when it needs you. While it's on, other apps can't play sound."
+    html`<${Btn} small cls="wide" color=${keepAliveWanted() ? 'mint' : 'paper'} sound="tap" testid="keepalive-toggle"
       onClick=${() => { setKeepAlive(!keepAliveWanted()); bump((x) => x + 1); }}>
-      🎧 Stay connected <span class="state">${keepAliveWanted() ? 'on' : 'off'}</span>
+      <span>🎧 Stay connected <span class="state">${keepAliveWanted() ? 'on' : 'off'}</span></span>
+      <span class="toggle-info" data-testid="keepalive-note">Keeps the game running when you switch apps, and chimes when it needs you. <b>While it's on, other apps can't play sound</b> (music, videos).</span>
     <//>`}
   </div>`;
-  const note = ka && html`<div class="muted small keepalive-note" data-testid="keepalive-note">🎧 Stay connected keeps the game running when you switch apps, and chimes when it needs you. <b>While it's on, other apps can't play sound</b> (music, videos).</div>`;
-  if (!card) return html`${body}${note}`;
-  return html`<div class="card" style="padding:10px 14px">${body}${note}
+  if (!card) return body;
+  return html`<div class="card" style="padding:10px 14px">${body}
     ${ns === 'blocked' && html`<div class="muted small" style="margin-top:6px">Reminders are blocked in this browser's site settings.</div>`}
   </div>`;
 }
