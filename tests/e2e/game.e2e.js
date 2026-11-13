@@ -400,13 +400,20 @@ test('a player switches to another app: others see it, and coming back offers "s
   await until(() => state(host, (c) => c.view.players.find((p) => p.name === 'Ann').away), 10000);
   await bob.getByTestId('answer-input').fill('bob was here');
   await tap(bob, 'submit-answer');
-  await bob.getByText('in another app…').waitFor({ timeout: 10000 }); // Bob's waiting list
+  await bob.getByText('left the app').waitFor({ timeout: 10000 }); // Bob's waiting list
   await sleep(15500);
   await setHidden(ann, false);
   await until(() => state(host, (c) => !c.view.players.find((p) => p.name === 'Ann').away), 10000);
   await ann.getByTestId('come-back-tip').waitFor({ timeout: 5000 });
   await tap(ann, 'tip-keepalive');
   assert.equal(await ann.evaluate(() => localStorage.getItem('aipsych.keepAlive')), 'true');
+  // The inaudible background sound plays (12 s, so Android gives it a real media session)…
+  const ka = (fn) => ann.evaluate(`import('./js/ui/keepalive.js').then((m) => (${fn})(m))`);
+  await until(() => ka((m) => m.keepAliveState().playing), 5000);
+  assert.equal(await ka((m) => m.keepAliveState().duration), 12);
+  // …and when the phone stops it, it comes back by itself.
+  await ka((m) => m._phoneStops());
+  await until(() => ka((m) => m.keepAliveState().playing), 5000);
   for (const p of [host, ann, bob]) await p.context().close();
 });
 

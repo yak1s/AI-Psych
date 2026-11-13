@@ -34,9 +34,9 @@ export function PlayerTiles({ view, onKick, showEmpty, onEditMe }) {
       ? html`<button class="avatar-edit" title="Change your face" aria-label="Change your face" onClick=${onEditMe} data-testid="edit-avatar">
           <${Avatar} p=${p} size="lg" bob delay=${i * 0.3} /><span class="edit-pencil">✏️</span>
         </button>`
-      : html`<${Avatar} p=${p} size="lg" bob off=${!p.online} delay=${i * 0.3} badge=${p.away ? '📱' : !p.online ? '📡' : null} />`}
+      : html`<${Avatar} p=${p} size="lg" bob off=${!p.online} delay=${i * 0.3} badge=${!p.online && !p.away ? '📡' : null} />`}
     <div class="name">${p.name}</div>
-    <div class="tag">${p.isHost ? 'host' : p.id === view.me ? 'you!' : p.away ? 'in another app' : !p.online ? 'reconnecting…' : ''}</div>
+    <div class="tag">${p.isHost ? 'host' : p.id === view.me ? 'you!' : p.away ? 'left the app' : !p.online ? 'reconnecting…' : ''}</div>
     ${onKick && p.online && p.net === 'relay' && html`<span class="net-tag" title="Connected through the backup relay (direct connection blocked on this network)">relay</span>`}
     ${onKick && !p.isHost && html`<button class="kick" title=${`Remove ${p.name}`} onClick=${() => onKick(p)}>${Doodle.cross({ size: 16, sw: 4 })}</button>`}
   </div>`);

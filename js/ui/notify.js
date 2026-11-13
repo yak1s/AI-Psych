@@ -51,10 +51,10 @@ if (typeof document !== 'undefined') {
 }
 
 /** Remind the player — only when they're not looking at the game. */
-export async function remind(title, body, tag = 'aipsych') {
+export async function remind(title, body, tag = 'aipsych', kind = 'turn') {
   if (typeof document === 'undefined' || document.visibilityState === 'visible') return;
   flashTitle(title);
-  needYou(title); // "Stay connected": media controls + a chime
+  needYou(kind, title); // "Stay connected": media controls + a chime
   if (notifyState() !== 'on') return;
   const opts = { body, tag, renotify: true, icon: 'assets/icon.svg', badge: 'assets/icon.svg', vibrate: [80, 40, 80] };
   try {

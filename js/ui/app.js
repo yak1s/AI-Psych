@@ -144,12 +144,12 @@ function useReminders(ctrl, view) {
   useEffect(() => {
     if (!g || !ctrl || ctrl.ended) return;
     if (g.phase === 'answer' && g.q.answerers.includes(me) && !g.myAnswer) {
-      const t = setTimeout(() => remind('🤖 New question!', `Question ${g.idx + 1} of ${g.n} is waiting for your answer.`, 'turn'), 4500);
+      const t = setTimeout(() => remind('🤖 New question!', `Question ${g.idx + 1} of ${g.n} is waiting for your answer.`, 'turn', 'turn'), 4500);
       return () => clearTimeout(t);
     }
-    if (g.phase === 'vote' && g.voters.includes(me) && !g.myVote) remind('🗳️ Time to vote!', "Pick your favorite answer — no vote, no points for yours.", 'turn');
-    if (g.phase === 'results') remind('📊 The results are in!', 'See who wrote what.', 'turn');
-    if (g.phase === 'final') remind('🏆 And the winner is…', 'The final scores are out!', 'turn');
+    if (g.phase === 'vote' && g.voters.includes(me) && !g.myVote) remind('🗳️ Time to vote!', "Pick your favorite answer — no vote, no points for yours.", 'turn', 'vote');
+    if (g.phase === 'results') remind('📊 The results are in!', 'See who wrote what.', 'turn', 'news');
+    if (g.phase === 'final') remind('🏆 And the winner is…', 'The final scores are out!', 'turn', 'news');
   }, [key]);
   // Time running out on you, or everybody's waiting just for you
   const waitingOnMe =
@@ -159,7 +159,7 @@ function useReminders(ctrl, view) {
       (g.phase === 'results' && g.ready && !g.ready.includes(me) && view.players.filter((p) => p.online && !g.ready.includes(p.id)).length === 1));
   useEffect(() => {
     if (!waitingOnMe) return;
-    const t = setTimeout(() => remind('⏰ Everyone is waiting for you!', 'Come back to the game 👀', 'nudge'), 20000);
+    const t = setTimeout(() => remind('⏰ Everyone is waiting for you!', 'Come back to the game 👀', 'nudge', 'waiting'), 20000);
     return () => clearTimeout(t);
   }, [waitingOnMe, key]);
 }
@@ -271,7 +271,7 @@ export function App({ boot }) {
   useEffect(() => setInRoom(inRoom), [inRoom]);
 
   // Leaving the page mid-game is noticed (the AI may ask about it…), and everyone sees
-  // "in another app" instead of a mysterious disconnect.
+  // "left the app" instead of a mysterious disconnect.
   const [tip, setTip] = useState(null);
   useEffect(() => {
     trackAway((ms) => {

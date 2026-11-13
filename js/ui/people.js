@@ -100,7 +100,7 @@ export function PlayersPanel({ ctrl, view, onClose }) {
       ${view.players.map((p) => html`<div key=${p.id} class="row" style="justify-content:space-between;flex-wrap:nowrap;gap:8px">
         <span class="row" style="gap:8px;flex-wrap:nowrap;min-width:0">
           <${Avatar} p=${p} size="sm" off=${!p.online} />
-          <span style="min-width:0"><b>${p.name}</b>${p.isHost ? ' (host)' : ''}<br /><span class="muted small">${p.away ? 'in another app' : p.online ? (p.net === 'relay' ? 'online (backup relay)' : 'online') : 'disconnected'}</span></span>
+          <span style="min-width:0"><b>${p.name}</b>${p.isHost ? ' (host)' : ''}<br /><span class="muted small">${p.away ? 'left the app' : p.online ? (p.net === 'relay' ? 'online (backup relay)' : 'online') : 'disconnected'}</span></span>
         </span>
         <span class="row" style="gap:6px;flex-wrap:nowrap">
           ${deck &&
@@ -129,15 +129,14 @@ export function PlayersPanel({ ctrl, view, onClose }) {
 export function ComeBackTip({ tip, onClose }) {
   const [, bump] = useState(0);
   const ns = notifyState();
-  const secs = Math.round(tip.ms / 1000);
   return html`<${Modal} onClose=${onClose} title="👋 Welcome back!">
     <div data-testid="come-back-tip">
-      <p style="margin-top:0">You were in another app for ${secs >= 90 ? `${Math.round(secs / 60)} minutes` : `${secs} seconds`}. Phones pause the game in the background, so it can lose you for a moment. Next time:</p>
+      <p style="margin-top:0">You left the game for a bit. Phones pause the game in the background, so it can lose you for a moment. Next time:</p>
       <div class="stack" style="gap:10px">
         ${keepAliveSupported() &&
         html`<${Btn} block color=${keepAliveWanted() ? 'mint' : 'grape'} testid="tip-keepalive" onClick=${() => { setKeepAlive(!keepAliveWanted()); bump((x) => x + 1); }}>
           🎧 Stay connected ${keepAliveWanted() ? '✓' : ''}<//>
-        <span class="muted small" style="margin-top:-4px">Keeps the game running in the background (a very soft sound) and chimes when it needs you. It may pause music on this phone.</span>`}
+        <span class="muted small" style="margin-top:-4px">Keeps the game running in the background and chimes when it needs you. While it's on, other apps can't play sound (music, videos).</span>`}
         ${(ns === 'ask' || ns === 'off') &&
         html`<${Btn} block color="sky" testid="tip-notify" onClick=${async () => { await enableNotify(); bump((x) => x + 1); }}>🔔 Remind me when it's my turn<//>`}
         <${Btn} block color="paper" sound="tap" onClick=${onClose}>Got it<//>
@@ -171,13 +170,14 @@ export function DeviceToggles({ card = true }) {
     <//>`}
     ${ka &&
     html`<${Btn} small color=${keepAliveWanted() ? 'mint' : 'paper'} sound="tap" testid="keepalive-toggle"
-      title="Keeps the game running while you use other apps (a very soft sound in the background), with a chime when it's your turn. May pause music on this phone."
+      title="Keeps the game running while you use other apps, with a chime when it needs you. While it's on, other apps can't play sound."
       onClick=${() => { setKeepAlive(!keepAliveWanted()); bump((x) => x + 1); }}>
       🎧 Stay connected <span class="state">${keepAliveWanted() ? 'on' : 'off'}</span>
     <//>`}
   </div>`;
-  if (!card) return body;
-  return html`<div class="card" style="padding:10px 14px">${body}
+  const note = ka && html`<div class="muted small keepalive-note" data-testid="keepalive-note">🎧 Stay connected keeps the game running when you switch apps, and chimes when it needs you. <b>While it's on, other apps can't play sound</b> (music, videos).</div>`;
+  if (!card) return html`${body}${note}`;
+  return html`<div class="card" style="padding:10px 14px">${body}${note}
     ${ns === 'blocked' && html`<div class="muted small" style="margin-top:6px">Reminders are blocked in this browser's site settings.</div>`}
   </div>`;
 }

@@ -677,7 +677,8 @@ body.spotlight .spotlight-layer { opacity: 1; }
 .deck-make { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .deck-make .btn { width: 100%; justify-content: center; }
 @media (max-width: 420px) { .deck-make { grid-template-columns: 1fr; } }
-.device-toggles { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; }
+.keepalive-note { margin-top: 8px; line-height: 1.35; }
+.device-toggles { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
 .device-toggles .btn { min-width: 0; width: 100%; flex-direction: column; gap: 2px; justify-content: center; text-align: center; white-space: normal; line-height: 1.15; font-size: 16px; padding: 6px 6px; }
 .device-toggles .state { font-size: 12px; padding: 0 7px; border-radius: 8px; border: 1.5px solid currentColor; opacity: 0.8; white-space: nowrap; }
 /* nothing inside a column may force the page wider than the phone */
